@@ -42,9 +42,8 @@ class RealmUserRepository {
 
     try {
       final FileStat stat = realmFile.statSync();
-      print('[Realm] File size: ${stat.size} bytes');
     } catch (e) {
-      print('[Realm] Cannot stat file: $e');
+      throw Exception('Cannot access file: $filePath\n$e');
     }
 
     try {
@@ -56,29 +55,19 @@ class RealmUserRepository {
         isReadOnly: true,
       );
 
-      print('[Realm] Creating Realm instance...');
       _realm = Realm(config);
-      print('[Realm] ✓ Opened: $filePath');
-      print('[Realm] ✓ Schema classes: ${_realm!.schema.length}');
 
       final SchemaObject? selectedSchema = _pickBestSchema(_realm!.schema);
       if (selectedSchema == null) {
         _openedSchemaName = null;
-        print('[Realm] ✗ No suitable schema found');
         return <Map<String, dynamic>>[];
       }
 
       _openedSchemaName = selectedSchema.name;
 
-      print(
-        '[Realm] ✓ Selected: ${selectedSchema.name} (${selectedSchema.length} fields)',
-      );
-
       final RealmResults<RealmObject> rows = _realm!.dynamic.all(
         selectedSchema.name,
       );
-
-      print('[Realm] ✓ Found ${rows.length} objects');
 
       return rows
           .map((RealmObject object) => _toMap(object))

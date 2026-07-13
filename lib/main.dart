@@ -21,7 +21,6 @@ void _installMacOsKeyboardAssertionWorkaround() {
 
     if (message.contains('A KeyDownEvent is dispatched') &&
         message.contains('physical key is already pressed')) {
-      debugPrint('[Keyboard] Ignored known macOS key sync assertion: $message');
       return;
     }
 
