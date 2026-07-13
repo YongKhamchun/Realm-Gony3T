@@ -34,6 +34,16 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
         children: <Widget>[
           Row(
             children: <Widget>[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.asset(
+                  'assets/images/logo_gony3t.png',
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 8),
               const Text('Query Section', style: TextStyle(fontSize: 16)),
               const Spacer(),
               IconButton(

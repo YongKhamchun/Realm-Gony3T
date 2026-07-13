@@ -79,51 +79,92 @@ class HomeTreeLayerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color selectedColor = Theme.of(context).colorScheme.primaryContainer;
+    final ThemeData theme = Theme.of(context);
+    final Color selectedColor = theme.colorScheme.primary.withValues(
+      alpha: 0.18,
+    );
+    final Color selectedBorderColor = theme.colorScheme.primary;
+    final Color selectedTextColor = theme.colorScheme.primary;
     final String selectedClass = schemaName ?? '';
+    final Color bg = theme.colorScheme.surface;
 
-    return ListView(
-      physics: const ClampingScrollPhysics(),
-      children: <Widget>[
-        const ListTile(dense: true, title: Text('CLASSES')),
-        ListTile(
-          dense: true,
-          leading: const Icon(Icons.link, size: 18),
-          title: Text(dataSourceLabel),
+    return ColoredBox(
+      color: bg,
+      child: ClipRect(
+        child: ListView(
+          physics: const ClampingScrollPhysics(),
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            const ListTile(dense: true, title: Text('CLASSES')),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.link, size: 18),
+              title: Text(dataSourceLabel),
+            ),
+            if (classes.isEmpty)
+              const ListTile(dense: true, title: Text('No classes found')),
+            ...classes.map((RealmClassSummary item) {
+              final bool isSelected = item.name == selectedClass;
+              return ListTile(
+                dense: true,
+                selected: isSelected,
+                selectedTileColor: selectedColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: isSelected
+                      ? BorderSide(color: selectedBorderColor, width: 1.2)
+                      : BorderSide.none,
+                ),
+                title: Text(
+                  item.name,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                    color: isSelected ? selectedTextColor : null,
+                  ),
+                ),
+                trailing: HomeCountBadge(
+                  count: item.count,
+                  isSelected: isSelected,
+                ),
+                onTap: () => onSelectClass(item.name),
+              );
+            }),
+          ],
         ),
-        if (classes.isEmpty)
-          const ListTile(dense: true, title: Text('No classes found')),
-        ...classes.map((RealmClassSummary item) {
-          final bool isSelected = item.name == selectedClass;
-          return ListTile(
-            dense: true,
-            selected: isSelected,
-            selectedTileColor: selectedColor,
-            title: Text(item.name),
-            trailing: HomeCountBadge(count: item.count),
-            onTap: () => onSelectClass(item.name),
-          );
-        }),
-      ],
+      ),
     );
   }
 }
 
 class HomeCountBadge extends StatelessWidget {
-  const HomeCountBadge({super.key, required this.count});
+  const HomeCountBadge({
+    super.key,
+    required this.count,
+    this.isSelected = false,
+  });
 
   final int count;
+  final bool isSelected;
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: isSelected
+            ? theme.colorScheme.primary
+            : theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        child: Text('$count'),
+        child: Text(
+          '$count',
+          style: TextStyle(
+            color: isSelected ? theme.colorScheme.onPrimary : null,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }

@@ -176,71 +176,82 @@ class _HomePageState extends ConsumerState<HomePage> {
     return Scaffold(
       body: Column(
         children: <Widget>[
-          HomeQueryPanel(
-            controller: _queryController,
-            onRunQuery: _runQuery,
-            onClearQuery: _clearQuery,
-            onOpenFile: _pickAndOpenRealmFile,
-            onOpenSettings: () {
-              Navigator.pushNamed(context, SettingPage.routeName);
-            },
-            dataSourceLabel: state.dataSourceLabel,
-            loadError: state.loadError,
+          Material(
+            elevation: 2,
+            color: theme.colorScheme.surface,
+            child: HomeQueryPanel(
+              controller: _queryController,
+              onRunQuery: _runQuery,
+              onClearQuery: _clearQuery,
+              onOpenFile: _pickAndOpenRealmFile,
+              onOpenSettings: () {
+                Navigator.pushNamed(context, SettingPage.routeName);
+              },
+              dataSourceLabel: state.dataSourceLabel,
+              loadError: state.loadError,
+            ),
           ),
           const Divider(height: 1),
           Expanded(
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final double viewportWidth = constraints.maxWidth;
-                final bool isNarrow = viewportWidth < 900;
+            child: ColoredBox(
+              color: theme.colorScheme.surface,
+              child: ClipRect(
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double viewportWidth = constraints.maxWidth;
+                    final bool isNarrow = viewportWidth < 900;
 
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) {
-                    return;
-                  }
-                  ref.read(homeProvider.notifier).setLayoutWidth(viewportWidth);
-                });
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) {
+                        return;
+                      }
+                      ref
+                          .read(homeProvider.notifier)
+                          .setLayoutWidth(viewportWidth);
+                    });
 
-                if (isNarrow) {
-                  return HomeMobileBody(
-                    classes: state.classes,
-                    documents: docs,
-                    tableColumns: state.currentTableColumns,
-                    selectedIndex: state.selectedIndex,
-                    dataSourceLabel: state.dataSourceLabel,
-                    schemaName: state.openedSchemaName,
-                    onSelectClass: _selectClass,
-                  );
-                }
-
-                return Row(
-                  children: <Widget>[
-                    SizedBox(
-                      width: 310,
-                      child: HomeTreeLayerPanel(
+                    if (isNarrow) {
+                      return HomeMobileBody(
                         classes: state.classes,
                         documents: docs,
+                        tableColumns: state.currentTableColumns,
                         selectedIndex: state.selectedIndex,
                         dataSourceLabel: state.dataSourceLabel,
                         schemaName: state.openedSchemaName,
                         onSelectClass: _selectClass,
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: HomeDataViewsPanel(
-                        documents: docs,
-                        tableColumns: state.currentTableColumns,
-                        displayRangeLabel: state.displayRangeLabel,
-                        canPrev: state.canPrevPage,
-                        canNext: state.canNextPage,
-                        onPrev: notifier.goPrevPage,
-                        onNext: notifier.goNextPage,
-                      ),
-                    ),
-                  ],
-                );
-              },
+                      );
+                    }
+
+                    return Row(
+                      children: <Widget>[
+                        SizedBox(
+                          width: 310,
+                          child: HomeTreeLayerPanel(
+                            classes: state.classes,
+                            documents: docs,
+                            selectedIndex: state.selectedIndex,
+                            dataSourceLabel: state.dataSourceLabel,
+                            schemaName: state.openedSchemaName,
+                            onSelectClass: _selectClass,
+                          ),
+                        ),
+                        const VerticalDivider(width: 1),
+                        Expanded(
+                          child: HomeDataViewsPanel(
+                            documents: docs,
+                            tableColumns: state.currentTableColumns,
+                            displayRangeLabel: state.displayRangeLabel,
+                            canPrev: state.canPrevPage,
+                            canNext: state.canNextPage,
+                            onPrev: notifier.goPrevPage,
+                            onNext: notifier.goNextPage,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
             ),
           ),
           ColoredBox(
