@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:realm_gony3t/src/utils/contant.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:realm_gony3t/realm_gony3T.dart';
 
-class SettingPage extends StatelessWidget {
-  const SettingPage({
-    super.key,
-    required this.currentThemeMode,
-    required this.onThemeModeChanged,
-  });
+class SettingPage extends ConsumerWidget {
+  const SettingPage({super.key});
 
-  final ThemeMode currentThemeMode;
-  final ValueChanged<ThemeMode> onThemeModeChanged;
-
-  static const String routeName = '$initRoute/setting';
+  static const String routeName = '$initRoute/setting-page';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeMode currentThemeMode = ref.watch(themeModeProvider);
     final Map<ThemeMode, String> labels = <ThemeMode, String>{
       ThemeMode.system: 'System',
       ThemeMode.light: 'Light mode',
@@ -45,7 +40,9 @@ class SettingPage extends StatelessWidget {
               selected: <ThemeMode>{currentThemeMode},
               showSelectedIcon: false,
               onSelectionChanged: (Set<ThemeMode> selection) {
-                onThemeModeChanged(selection.first);
+                ref
+                    .read(themeModeProvider.notifier)
+                    .setThemeMode(selection.first);
               },
             ),
           ),

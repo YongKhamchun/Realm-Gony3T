@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:realm_gony3t/realm_gony3T.dart';
 
 /// AppRouter is a class that manages the routing of the application.
 /// It is responsible for generating the routes and handling navigation between different screens.
 ///
+final AppRouter appRouter = AppRouter();
+
 class AppRouter {
   AppRouter();
 
@@ -17,7 +20,16 @@ class AppRouter {
     const Duration transitionDuration = Duration(milliseconds: 30);
     const Duration reverseTransitionDuration = Duration(milliseconds: 30);
 
-    switch (settings.name) {}
+    switch (settings.name) {
+      case HomePage.routeName:
+        page = const HomePage();
+        break;
+      case SettingPage.routeName:
+        page = const SettingPage();
+        break;
+      default:
+        page = const Scaffold(body: Center(child: Text('Page not found')));
+    }
 
     /// Return PageRoute with Fade Transition for navigation
     /// and include route settings for history tracking

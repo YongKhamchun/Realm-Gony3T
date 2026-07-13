@@ -1,32 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:realm_gony3t/src/view/setting/setting.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:realm_gony3t/realm_gony3T.dart';
+import 'package:realm_gony3t/router.dart';
+import 'package:realm_gony3t/src/view/home/home_page.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends StatefulWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeMode themeMode = ref.watch(themeModeProvider);
 
-class _MyAppState extends State<MyApp> {
-  ThemeMode _themeMode = ThemeMode.system;
-
-  void _onThemeModeChanged(ThemeMode mode) {
-    setState(() {
-      _themeMode = mode;
-    });
-  }
-
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
-      themeMode: _themeMode,
+      themeMode: themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
@@ -38,10 +29,8 @@ class _MyAppState extends State<MyApp> {
         ),
         useMaterial3: true,
       ),
-      home: SettingPage(
-        currentThemeMode: _themeMode,
-        onThemeModeChanged: _onThemeModeChanged,
-      ),
+      initialRoute: HomePage.routeName,
+      onGenerateRoute: appRouter.onGenerateRoute,
     );
   }
 }
