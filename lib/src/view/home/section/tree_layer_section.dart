@@ -59,7 +59,7 @@ class HomeMobileBody extends StatelessWidget {
   }
 }
 
-class HomeTreeLayerPanel extends StatelessWidget {
+class HomeTreeLayerPanel extends StatefulWidget {
   const HomeTreeLayerPanel({
     super.key,
     required this.classes,
@@ -78,6 +78,20 @@ class HomeTreeLayerPanel extends StatelessWidget {
   final ValueChanged<String> onSelectClass;
 
   @override
+  State<HomeTreeLayerPanel> createState() => _HomeTreeLayerPanelState();
+}
+
+class _HomeTreeLayerPanelState extends State<HomeTreeLayerPanel> {
+  final TextEditingController _classSearchController = TextEditingController();
+  String _classSearch = '';
+
+  @override
+  void dispose() {
+    _classSearchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color selectedColor = theme.colorScheme.primary.withValues(
@@ -85,8 +99,17 @@ class HomeTreeLayerPanel extends StatelessWidget {
     );
     final Color selectedBorderColor = theme.colorScheme.primary;
     final Color selectedTextColor = theme.colorScheme.primary;
-    final String selectedClass = schemaName ?? '';
+    final String selectedClass = widget.schemaName ?? '';
     final Color bg = theme.colorScheme.surface;
+    final String search = _classSearch.trim().toLowerCase();
+    final List<RealmClassSummary> filteredClasses = search.isEmpty
+        ? widget.classes
+        : widget.classes
+              .where(
+                (RealmClassSummary item) =>
+                    item.name.toLowerCase().contains(search),
+              )
+              .toList(growable: false);
 
     return ColoredBox(
       color: bg,
@@ -99,11 +122,30 @@ class HomeTreeLayerPanel extends StatelessWidget {
             ListTile(
               dense: true,
               leading: const Icon(Icons.link, size: 18),
-              title: Text(dataSourceLabel),
+              title: Text(widget.dataSourceLabel),
             ),
-            if (classes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: TextField(
+                controller: _classSearchController,
+                decoration: const InputDecoration(
+                  hintText: 'Find class',
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                  ),
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (String value) {
+                  setState(() {
+                    _classSearch = value;
+                  });
+                },
+              ),
+            ),
+            if (filteredClasses.isEmpty)
               const ListTile(dense: true, title: Text('No classes found')),
-            ...classes.map((RealmClassSummary item) {
+            ...filteredClasses.map((RealmClassSummary item) {
               final bool isSelected = item.name == selectedClass;
               return ListTile(
                 dense: true,
@@ -126,7 +168,7 @@ class HomeTreeLayerPanel extends StatelessWidget {
                   count: item.count,
                   isSelected: isSelected,
                 ),
-                onTap: () => onSelectClass(item.name),
+                onTap: () => widget.onSelectClass(item.name),
               );
             }),
           ],

@@ -14,6 +14,10 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   final TextEditingController _queryController = TextEditingController();
+  double _leftPanelWidth = 310;
+
+  static const double _minLeftPanelWidth = 220;
+  static const double _maxLeftPanelWidth = 520;
 
   @override
   void dispose() {
@@ -75,7 +79,9 @@ class _HomePageState extends ConsumerState<HomePage> {
             controller: pathController,
             decoration: const InputDecoration(
               hintText: '/path/to/your.realm',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
             ),
           ),
           actions: <Widget>[
@@ -120,7 +126,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                     obscureText: obscure,
                     decoration: InputDecoration(
                       hintText: 'Base64, 128-hex, or 64-char plain key',
-                      border: const OutlineInputBorder(),
+                      border: const OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(12)),
+                      ),
                       suffixIcon: IconButton(
                         onPressed: () {
                           setStateDialog(() {
@@ -225,7 +233,13 @@ class _HomePageState extends ConsumerState<HomePage> {
                     return Row(
                       children: <Widget>[
                         SizedBox(
-                          width: 310,
+                          width: _leftPanelWidth.clamp(
+                            _minLeftPanelWidth,
+                            (viewportWidth * 0.6).clamp(
+                              _minLeftPanelWidth,
+                              _maxLeftPanelWidth,
+                            ),
+                          ),
                           child: HomeTreeLayerPanel(
                             classes: state.classes,
                             documents: docs,
@@ -235,7 +249,32 @@ class _HomePageState extends ConsumerState<HomePage> {
                             onSelectClass: _selectClass,
                           ),
                         ),
-                        const VerticalDivider(width: 1),
+                        MouseRegion(
+                          cursor: SystemMouseCursors.resizeColumn,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onHorizontalDragUpdate:
+                                (DragUpdateDetails details) {
+                                  setState(() {
+                                    final double maxAllowed =
+                                        (viewportWidth * 0.6).clamp(
+                                          _minLeftPanelWidth,
+                                          _maxLeftPanelWidth,
+                                        );
+                                    _leftPanelWidth =
+                                        (_leftPanelWidth + details.delta.dx)
+                                            .clamp(
+                                              _minLeftPanelWidth,
+                                              maxAllowed,
+                                            );
+                                  });
+                                },
+                            child: const SizedBox(
+                              width: 10,
+                              child: Center(child: VerticalDivider(width: 1)),
+                            ),
+                          ),
+                        ),
                         Expanded(
                           child: HomeDataViewsPanel(
                             documents: docs,

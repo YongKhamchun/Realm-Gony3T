@@ -77,7 +77,9 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
                 child: TextField(
                   controller: widget.controller,
                   decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
                     hintText: 'Try: active, Bangkok, u001',
                     prefixIcon: Icon(Icons.search),
                   ),
