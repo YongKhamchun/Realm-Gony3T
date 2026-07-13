@@ -455,7 +455,6 @@ class _HomePageState extends State<HomePage> {
                     const VerticalDivider(width: 1),
                     Expanded(
                       child: _DataViewsPanel(
-                        selectedDocument: _selectedDocument,
                         documents: docs,
                         tableColumns: _currentTableColumns,
                         displayRangeLabel: displayRangeLabel,
@@ -585,10 +584,6 @@ class _MobileBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, dynamic>? selected = documents.isEmpty
-        ? null
-        : documents[selectedIndex.clamp(0, documents.length - 1)];
-
     return DefaultTabController(
       length: 4,
       child: Column(
@@ -613,9 +608,9 @@ class _MobileBody extends StatelessWidget {
                   schemaName: schemaName,
                   onSelectClass: onSelectClass,
                 ),
-                _JsonView(document: selected),
+                _JsonView(documents: documents),
                 _TableView(documents: documents, columns: tableColumns),
-                _InspectorView(document: selected),
+                _InspectorView(documents: documents),
               ],
             ),
           ),
@@ -696,7 +691,6 @@ class _CountBadge extends StatelessWidget {
 
 class _DataViewsPanel extends StatelessWidget {
   const _DataViewsPanel({
-    required this.selectedDocument,
     required this.documents,
     required this.tableColumns,
     required this.displayRangeLabel,
@@ -706,7 +700,6 @@ class _DataViewsPanel extends StatelessWidget {
     required this.onNext,
   });
 
-  final Map<String, dynamic>? selectedDocument;
   final List<Map<String, dynamic>> documents;
   final List<String> tableColumns;
   final String displayRangeLabel;
@@ -755,9 +748,9 @@ class _DataViewsPanel extends StatelessWidget {
             child: TabBarView(
               physics: const NeverScrollableScrollPhysics(),
               children: <Widget>[
-                _JsonView(document: selectedDocument),
+                _JsonView(documents: documents),
                 _TableView(documents: documents, columns: tableColumns),
-                _InspectorView(document: selectedDocument),
+                _InspectorView(documents: documents),
               ],
             ),
           ),
@@ -768,19 +761,19 @@ class _DataViewsPanel extends StatelessWidget {
 }
 
 class _JsonView extends StatelessWidget {
-  const _JsonView({required this.document});
+  const _JsonView({required this.documents});
 
-  final Map<String, dynamic>? document;
+  final List<Map<String, dynamic>> documents;
 
   @override
   Widget build(BuildContext context) {
-    if (document == null) {
-      return const Center(child: Text('No document selected'));
+    if (documents.isEmpty) {
+      return const Center(child: Text('No data found for this page'));
     }
 
     final String pretty = const JsonEncoder.withIndent(
       '  ',
-    ).convert(_toJsonSafe(document));
+    ).convert(_toJsonSafe(documents));
     return Padding(
       padding: const EdgeInsets.all(16),
       child: SizedBox(
@@ -845,14 +838,14 @@ class _TableView extends StatelessWidget {
 }
 
 class _InspectorView extends StatelessWidget {
-  const _InspectorView({required this.document});
+  const _InspectorView({required this.documents});
 
-  final Map<String, dynamic>? document;
+  final List<Map<String, dynamic>> documents;
 
   @override
   Widget build(BuildContext context) {
-    if (document == null) {
-      return const Center(child: Text('No document selected'));
+    if (documents.isEmpty) {
+      return const Center(child: Text('No data found for this page'));
     }
 
     return Column(
@@ -876,9 +869,13 @@ class _InspectorView extends StatelessWidget {
         ),
         Expanded(
           child: ListView(
-            children: <Widget>[
-              _InspectorNodeTile(keyLabel: '{ }', value: document, depth: 0),
-            ],
+            children: List<Widget>.generate(documents.length, (int index) {
+              final Map<String, dynamic> doc = documents[index];
+              final String key = doc.containsKey('_id')
+                  ? '#$index (${doc['_id']})'
+                  : '#$index';
+              return _InspectorNodeTile(keyLabel: key, value: doc, depth: 0);
+            }),
           ),
         ),
       ],
@@ -940,7 +937,7 @@ class _InspectorNodeTile extends StatelessWidget {
     return ExpansionTile(
       tilePadding: EdgeInsets.only(left: 12 + depth * 14, right: 8),
       childrenPadding: EdgeInsets.zero,
-      initiallyExpanded: depth < 2,
+      initiallyExpanded: false,
       title: Row(
         children: <Widget>[
           SizedBox(width: 150, child: Text(keyLabel)),
