@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:realm_gony3t/realm_gony3T.dart';
+import 'package:realm_gony3t/realm_gony3t.dart';
 
 /// AppRouter is a class that manages the routing of the application.
 /// It is responsible for generating the routes and handling navigation between different screens.

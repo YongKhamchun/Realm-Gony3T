@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:realm_gony3t/realm_gony3T.dart';
+import 'package:realm_gony3t/realm_gony3t.dart';
 
 class SettingPage extends ConsumerWidget {
   const SettingPage({super.key});
