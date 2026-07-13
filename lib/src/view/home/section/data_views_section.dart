@@ -100,11 +100,16 @@ class HomeJsonView extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                pretty,
-                style: const TextStyle(height: 1.4),
-              ),
+            child: CustomScrollView(
+              physics: const ClampingScrollPhysics(),
+              slivers: <Widget>[
+                SliverToBoxAdapter(
+                  child: SelectableText(
+                    pretty,
+                    style: const TextStyle(height: 1.4),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -130,26 +135,133 @@ class HomeTableView extends StatelessWidget {
     }
 
     final List<String> effectiveColumns = columns.isEmpty
-        ? documents.first.keys.toList(growable: false)
+        ? documents.first.keys
+              .where((String key) => key != '_id')
+              .toList(growable: false)
         : columns;
+    const double cellWidth = 170;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: effectiveColumns
-              .map((String key) => DataColumn(label: Text(key)))
-              .toList(growable: false),
-          rows: documents
-              .map((Map<String, dynamic> doc) {
-                return DataRow(
-                  cells: effectiveColumns
-                      .map((String key) => DataCell(Text('${doc[key] ?? ''}')))
-                      .toList(growable: false),
-                );
-              })
-              .toList(growable: false),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double tableWidth = (effectiveColumns.length * cellWidth)
+            .toDouble();
+        final double minWidth = constraints.maxWidth;
+
+        return CustomScrollView(
+          physics: const ClampingScrollPhysics(),
+          scrollDirection: Axis.horizontal,
+          slivers: <Widget>[
+            SliverPadding(
+              padding: const EdgeInsets.all(12),
+              sliver: SliverToBoxAdapter(
+                child: SizedBox(
+                  width: tableWidth < minWidth ? minWidth : tableWidth,
+                  child: CustomScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    slivers: <Widget>[
+                      SliverToBoxAdapter(
+                        child: _TableHeaderRow(columns: effectiveColumns),
+                      ),
+                      SliverList.builder(
+                        itemCount: documents.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          return _TableDataRow(
+                            rowIndex: index,
+                            columns: effectiveColumns,
+                            document: documents[index],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TableHeaderRow extends StatelessWidget {
+  const _TableHeaderRow({required this.columns});
+
+  final List<String> columns;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg = Theme.of(context).colorScheme.surfaceContainerHighest;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(
+          top: BorderSide(color: Theme.of(context).dividerColor),
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Row(
+        children: columns
+            .map((String key) => _TableCell(text: key, isHeader: true))
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _TableDataRow extends StatelessWidget {
+  const _TableDataRow({
+    required this.rowIndex,
+    required this.columns,
+    required this.document,
+  });
+
+  final int rowIndex;
+  final List<String> columns;
+  final Map<String, dynamic> document;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isEven = rowIndex.isEven;
+    final Color bg = isEven
+        ? Theme.of(context).colorScheme.surface
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Row(
+        children: columns
+            .map((String key) => _TableCell(text: displayValue(document[key])))
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _TableCell extends StatelessWidget {
+  const _TableCell({required this.text, this.isHeader = false});
+
+  final String text;
+  final bool isHeader;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 170,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: isHeader
+              ? Theme.of(context).textTheme.titleSmall
+              : Theme.of(context).textTheme.bodyMedium,
         ),
       ),
     );
@@ -187,14 +299,24 @@ class HomeInspectorView extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView(
-            children: List<Widget>.generate(documents.length, (int index) {
-              final Map<String, dynamic> doc = documents[index];
-              final String key = doc.containsKey('_id')
-                  ? '#$index (${doc['_id']})'
-                  : '#$index';
-              return HomeInspectorNodeTile(keyLabel: key, value: doc, depth: 0);
-            }),
+          child: CustomScrollView(
+            physics: const ClampingScrollPhysics(),
+            slivers: <Widget>[
+              SliverList(
+                delegate: SliverChildBuilderDelegate((
+                  BuildContext context,
+                  int index,
+                ) {
+                  final Map<String, dynamic> doc = documents[index];
+                  final String key = '#$index';
+                  return HomeInspectorNodeTile(
+                    keyLabel: key,
+                    value: doc,
+                    depth: 0,
+                  );
+                }, childCount: documents.length),
+              ),
+            ],
           ),
         ),
       ],

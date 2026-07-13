@@ -256,8 +256,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                   Text(state.displayRangeLabel),
                   const SizedBox(width: 16),
                   Text('Class: ${state.openedSchemaName ?? '-'}'),
-                  const SizedBox(width: 16),
-                  Text('Selected: ${state.selectedDocument?['_id'] ?? '-'}'),
                 ],
               ),
             ),

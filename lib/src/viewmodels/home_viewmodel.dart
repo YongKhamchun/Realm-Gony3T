@@ -115,16 +115,16 @@ class HomeState {
         selectedClassSummary?.fields ?? <String>[];
     if (schemaFields.isEmpty) {
       if (documents.isEmpty) {
-        return const <String>['_id'];
+        return const <String>[];
       }
-      return documents.first.keys.toList(growable: false);
+      return documents.first.keys
+          .where((String key) => key != '_id')
+          .toList(growable: false);
     }
 
-    if (schemaFields.contains('_id')) {
-      return schemaFields;
-    }
-
-    return <String>['_id', ...schemaFields];
+    return schemaFields
+        .where((String key) => key != '_id')
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> get filteredDocuments {
