@@ -42,6 +42,11 @@ class RealmUserRepository {
 
     try {
       final FileStat stat = realmFile.statSync();
+      if (stat.modeString().contains('w')) {
+        throw Exception(
+          'File is writable. Please ensure the file is read-only.',
+        );
+      }
     } catch (e) {
       throw Exception('Cannot access file: $filePath\n$e');
     }

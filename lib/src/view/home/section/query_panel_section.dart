@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
-class HomeQueryPanel extends StatelessWidget {
+class HomeQueryPanel extends StatefulWidget {
   const HomeQueryPanel({
     super.key,
     required this.controller,
     required this.onRunQuery,
     required this.onClearQuery,
+    required this.onOpenFile,
+    required this.onOpenSettings,
     required this.dataSourceLabel,
     required this.loadError,
   });
@@ -13,9 +15,16 @@ class HomeQueryPanel extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onRunQuery;
   final VoidCallback onClearQuery;
+  final VoidCallback onOpenFile;
+  final VoidCallback onOpenSettings;
   final String dataSourceLabel;
   final String? loadError;
 
+  @override
+  State<HomeQueryPanel> createState() => _HomeQueryPanelState();
+}
+
+class _HomeQueryPanelState extends State<HomeQueryPanel> {
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -23,16 +32,31 @@ class HomeQueryPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text('Query Section', style: TextStyle(fontSize: 16)),
+          Row(
+            children: <Widget>[
+              const Text('Query Section', style: TextStyle(fontSize: 16)),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Open .realm file',
+                onPressed: widget.onOpenFile,
+                icon: const Icon(Icons.folder_open),
+              ),
+              IconButton(
+                tooltip: 'Settings',
+                onPressed: widget.onOpenSettings,
+                icon: const Icon(Icons.settings),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
-            'Data source: $dataSourceLabel',
+            'Data source: ${widget.dataSourceLabel}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          if (loadError != null) ...<Widget>[
+          if (widget.loadError != null) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              loadError!,
+              widget.loadError!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
@@ -41,24 +65,24 @@ class HomeQueryPanel extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: TextField(
-                  controller: controller,
+                  controller: widget.controller,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     hintText: 'Try: active, Bangkok, u001',
                     prefixIcon: Icon(Icons.search),
                   ),
-                  onSubmitted: (_) => onRunQuery(),
+                  onSubmitted: (_) => widget.onRunQuery(),
                 ),
               ),
               const SizedBox(width: 12),
               FilledButton.icon(
-                onPressed: onRunQuery,
+                onPressed: widget.onRunQuery,
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Run'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed: onClearQuery,
+                onPressed: widget.onClearQuery,
                 icon: const Icon(Icons.clear),
                 label: const Text('Clear'),
               ),
