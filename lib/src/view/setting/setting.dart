@@ -17,40 +17,53 @@ class SettingPage extends ConsumerWidget {
     };
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        children: <Widget>[
-          const SizedBox(height: 8),
-          const ListTile(
-            title: Text('Theme mode'),
-            subtitle: Text('Choose app appearance behavior'),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<ThemeMode>(
-              segments: labels.entries
-                  .map(
-                    (MapEntry<ThemeMode, String> entry) =>
-                        ButtonSegment<ThemeMode>(
-                          value: entry.key,
-                          label: Text(entry.value),
-                        ),
-                  )
-                  .toList(),
-              selected: <ThemeMode>{currentThemeMode},
-              showSelectedIcon: false,
-              onSelectionChanged: (Set<ThemeMode> selection) {
-                ref
-                    .read(themeModeProvider.notifier)
-                    .setThemeMode(selection.first);
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('Current mode'),
-            subtitle: Text(labels[currentThemeMode] ?? 'Unknown'),
+      appBar: AppBar(title: const Text('')),
+      body: CustomScrollView(
+        physics: const ClampingScrollPhysics(),
+        slivers: <Widget>[
+          SliverList(
+            delegate: SliverChildBuilderDelegate((
+              BuildContext context,
+              int index,
+            ) {
+              // final ThemeMode mode = ThemeMode.values[index];
+              return Column(
+                children: [
+                  const SizedBox(height: 8),
+                  const ListTile(
+                    title: Text('Theme mode'),
+                    subtitle: Text('Choose app appearance behavior'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SegmentedButton<ThemeMode>(
+                      segments: labels.entries
+                          .map(
+                            (MapEntry<ThemeMode, String> entry) =>
+                                ButtonSegment<ThemeMode>(
+                                  value: entry.key,
+                                  label: Text(entry.value),
+                                ),
+                          )
+                          .toList(),
+                      selected: <ThemeMode>{currentThemeMode},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (Set<ThemeMode> selection) {
+                        ref
+                            .read(themeModeProvider.notifier)
+                            .setThemeMode(selection.first);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('Current mode'),
+                    subtitle: Text(labels[currentThemeMode] ?? 'Unknown'),
+                  ),
+                ],
+              );
+            }, childCount: 1),
           ),
         ],
       ),
