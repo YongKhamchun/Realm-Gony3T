@@ -17,6 +17,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final RealmUserRepository _repository = RealmUserRepository();
   final TextEditingController _queryController = TextEditingController();
+  static const int _maxDisplayCount = 50;
+  String _lastEncryptionKeyInput = '';
 
   List<Map<String, dynamic>> _documents = <Map<String, dynamic>>[
     <String, dynamic>{
@@ -36,8 +38,11 @@ class _HomePageState extends State<HomePage> {
   ];
 
   String _query = '';
+  int _pageStart = 0;
   int _selectedIndex = 0;
   String _dataSourceLabel = 'Mock data';
+  List<RealmClassSummary> _classes = <RealmClassSummary>[];
+  String? _openedSchemaName;
   String? _loadError;
 
   @override
@@ -65,10 +70,26 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    await _openRealmFile(filePath.trim());
+    final String? encryptionKeyInput = await _showEncryptionKeyDialog(
+      initialValue: _lastEncryptionKeyInput,
+    );
+
+    if (!mounted || encryptionKeyInput == null) {
+      return;
+    }
+
+    _lastEncryptionKeyInput = encryptionKeyInput;
+
+    await _openRealmFile(
+      filePath.trim(),
+      encryptionKeyInput: encryptionKeyInput,
+    );
   }
 
-  Future<void> _openRealmFile(String filePath) async {
+  Future<void> _openRealmFile(
+    String filePath, {
+    String? encryptionKeyInput,
+  }) async {
     final File file = File(filePath);
     if (!file.existsSync()) {
       setState(() {
@@ -78,17 +99,33 @@ class _HomePageState extends State<HomePage> {
     }
 
     try {
-      final List<Map<String, dynamic>> loaded = _repository.openAndReadUsers(
+      final List<RealmClassSummary> classes = _repository.openAndListClasses(
         filePath,
+        encryptionKeyInput: encryptionKeyInput,
       );
 
+      final String? initialClassName = classes
+          .cast<RealmClassSummary?>()
+          .firstWhere(
+            (RealmClassSummary? summary) => (summary?.count ?? 0) > 0,
+            orElse: () => classes.isEmpty ? null : classes.first,
+          )
+          ?.name;
+
+      final List<Map<String, dynamic>> loaded = initialClassName == null
+          ? <Map<String, dynamic>>[]
+          : _repository.readClassDocuments(initialClassName);
+
       setState(() {
+        _classes = classes;
         _documents = loaded;
         _query = '';
+        _pageStart = 0;
         _queryController.clear();
         _selectedIndex = 0;
         _loadError = null;
         _dataSourceLabel = _fileNameFromPath(filePath);
+        _openedSchemaName = initialClassName;
       });
     } catch (e, stackTrace) {
       print('[ERROR] Failed to open realm file: $filePath');
@@ -96,6 +133,31 @@ class _HomePageState extends State<HomePage> {
       print('[ERROR] Stack: $stackTrace');
       setState(() {
         _loadError = 'Open failed: schema mismatch or unsupported file.\n$e';
+      });
+    }
+  }
+
+  void _selectClass(String className) {
+    try {
+      final List<Map<String, dynamic>> loaded = _repository.readClassDocuments(
+        className,
+      );
+
+      setState(() {
+        _documents = loaded;
+        _pageStart = 0;
+        _selectedIndex = 0;
+        _query = '';
+        _queryController.clear();
+        _openedSchemaName = className;
+        _loadError = null;
+      });
+    } catch (e, stackTrace) {
+      print('[ERROR] Failed to read class: $className');
+      print('[ERROR] Exception: $e');
+      print('[ERROR] Stack: $stackTrace');
+      setState(() {
+        _loadError = 'Read class failed: $className\n$e';
       });
     }
   }
@@ -129,6 +191,69 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<String?> _showEncryptionKeyDialog({String initialValue = ''}) async {
+    final TextEditingController keyController = TextEditingController(
+      text: initialValue,
+    );
+
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        bool obscure = true;
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateDialog) {
+            return AlertDialog(
+              title: const Text('Realm Encryption Key'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    'Enter key for encrypted file. Leave empty for non-encrypted realm.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyController,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      hintText: 'Base64, 128-hex, or 64-char plain key',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setStateDialog(() {
+                            obscure = !obscure;
+                          });
+                        },
+                        icon: Icon(
+                          obscure ? Icons.visibility : Icons.visibility_off,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.of(context).pop(keyController.text),
+                  child: const Text('Open'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    keyController.dispose();
+    return result;
+  }
+
   List<Map<String, dynamic>> get _filteredDocuments {
     final String input = _query.trim().toLowerCase();
     if (input.isEmpty) {
@@ -136,13 +261,73 @@ class _HomePageState extends State<HomePage> {
     }
 
     return _documents.where((Map<String, dynamic> doc) {
-      final String haystack = jsonEncode(doc).toLowerCase();
+      final String haystack = _safeJsonEncode(doc).toLowerCase();
       return haystack.contains(input);
     }).toList();
   }
 
+  int _normalizedPageStart(int total) {
+    if (total <= 0) {
+      return 0;
+    }
+
+    if (_pageStart < 0) {
+      return 0;
+    }
+
+    if (_pageStart >= total) {
+      return ((total - 1) ~/ _maxDisplayCount) * _maxDisplayCount;
+    }
+
+    return (_pageStart ~/ _maxDisplayCount) * _maxDisplayCount;
+  }
+
+  List<Map<String, dynamic>> _pagedDocuments(List<Map<String, dynamic>> input) {
+    if (input.isEmpty) {
+      return <Map<String, dynamic>>[];
+    }
+
+    final int start = _normalizedPageStart(input.length);
+    final int end = (start + _maxDisplayCount).clamp(0, input.length);
+    return input.sublist(start, end);
+  }
+
+  bool _canPrevPage(int total) {
+    return _normalizedPageStart(total) > 0;
+  }
+
+  bool _canNextPage(int total) {
+    if (total <= 0) {
+      return false;
+    }
+    final int start = _normalizedPageStart(total);
+    return start + _maxDisplayCount < total;
+  }
+
+  void _goPrevPage(int total) {
+    if (!_canPrevPage(total)) {
+      return;
+    }
+
+    setState(() {
+      _pageStart = _normalizedPageStart(total) - _maxDisplayCount;
+      _selectedIndex = 0;
+    });
+  }
+
+  void _goNextPage(int total) {
+    if (!_canNextPage(total)) {
+      return;
+    }
+
+    setState(() {
+      _pageStart = _normalizedPageStart(total) + _maxDisplayCount;
+      _selectedIndex = 0;
+    });
+  }
+
   Map<String, dynamic>? get _selectedDocument {
-    final List<Map<String, dynamic>> docs = _filteredDocuments;
+    final List<Map<String, dynamic>> docs = _pagedDocuments(_filteredDocuments);
     if (docs.isEmpty) {
       return null;
     }
@@ -154,6 +339,7 @@ class _HomePageState extends State<HomePage> {
   void _runQuery() {
     setState(() {
       _query = _queryController.text;
+      _pageStart = 0;
       _selectedIndex = 0;
     });
   }
@@ -162,14 +348,51 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _queryController.clear();
       _query = '';
+      _pageStart = 0;
       _selectedIndex = 0;
     });
+  }
+
+  RealmClassSummary? get _selectedClassSummary {
+    final String? schemaName = _openedSchemaName;
+    if (schemaName == null) {
+      return null;
+    }
+
+    for (final RealmClassSummary summary in _classes) {
+      if (summary.name == schemaName) {
+        return summary;
+      }
+    }
+    return null;
+  }
+
+  List<String> get _currentTableColumns {
+    final List<String> schemaFields =
+        _selectedClassSummary?.fields ?? <String>[];
+    if (schemaFields.isEmpty) {
+      if (_documents.isEmpty) {
+        return const <String>['_id'];
+      }
+      return _documents.first.keys.toList(growable: false);
+    }
+
+    if (schemaFields.contains('_id')) {
+      return schemaFields;
+    }
+
+    return <String>['_id', ...schemaFields];
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final List<Map<String, dynamic>> docs = _filteredDocuments;
+    final List<Map<String, dynamic>> filteredDocs = _filteredDocuments;
+    final int normalizedStart = _normalizedPageStart(filteredDocs.length);
+    final List<Map<String, dynamic>> docs = _pagedDocuments(filteredDocs);
+    final String displayRangeLabel = docs.isEmpty
+        ? 'Display 0 - 0'
+        : 'Display $normalizedStart - ${normalizedStart + docs.length}';
 
     return Scaffold(
       appBar: AppBar(
@@ -206,14 +429,13 @@ class _HomePageState extends State<HomePage> {
 
                 if (isNarrow) {
                   return _MobileBody(
+                    classes: _classes,
                     documents: docs,
+                    tableColumns: _currentTableColumns,
                     selectedIndex: _selectedIndex,
                     dataSourceLabel: _dataSourceLabel,
-                    onSelectIndex: (int index) {
-                      setState(() {
-                        _selectedIndex = index;
-                      });
-                    },
+                    schemaName: _openedSchemaName,
+                    onSelectClass: _selectClass,
                   );
                 }
 
@@ -222,14 +444,12 @@ class _HomePageState extends State<HomePage> {
                     SizedBox(
                       width: 310,
                       child: _TreeLayerPanel(
+                        classes: _classes,
                         documents: docs,
                         selectedIndex: _selectedIndex,
                         dataSourceLabel: _dataSourceLabel,
-                        onSelectIndex: (int index) {
-                          setState(() {
-                            _selectedIndex = index;
-                          });
-                        },
+                        schemaName: _openedSchemaName,
+                        onSelectClass: _selectClass,
                       ),
                     ),
                     const VerticalDivider(width: 1),
@@ -237,6 +457,12 @@ class _HomePageState extends State<HomePage> {
                       child: _DataViewsPanel(
                         selectedDocument: _selectedDocument,
                         documents: docs,
+                        tableColumns: _currentTableColumns,
+                        displayRangeLabel: displayRangeLabel,
+                        canPrev: _canPrevPage(filteredDocs.length),
+                        canNext: _canNextPage(filteredDocs.length),
+                        onPrev: () => _goPrevPage(filteredDocs.length),
+                        onNext: () => _goNextPage(filteredDocs.length),
                       ),
                     ),
                   ],
@@ -244,17 +470,23 @@ class _HomePageState extends State<HomePage> {
               },
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ColoredBox(
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.35,
             ),
-            child: Row(
-              children: <Widget>[
-                Text('Results: ${docs.length}'),
-                const SizedBox(width: 16),
-                Text('Selected: ${_selectedDocument?['_id'] ?? '-'}'),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: <Widget>[
+                  Text('Results: ${filteredDocs.length}'),
+                  const SizedBox(width: 16),
+                  Text(displayRangeLabel),
+                  const SizedBox(width: 16),
+                  Text('Class: ${_openedSchemaName ?? '-'}'),
+                  const SizedBox(width: 16),
+                  Text('Selected: ${_selectedDocument?['_id'] ?? '-'}'),
+                ],
+              ),
             ),
           ),
         ],
@@ -334,16 +566,22 @@ class _QueryPanel extends StatelessWidget {
 
 class _MobileBody extends StatelessWidget {
   const _MobileBody({
+    required this.classes,
     required this.documents,
+    required this.tableColumns,
     required this.selectedIndex,
     required this.dataSourceLabel,
-    required this.onSelectIndex,
+    required this.schemaName,
+    required this.onSelectClass,
   });
 
+  final List<RealmClassSummary> classes;
   final List<Map<String, dynamic>> documents;
+  final List<String> tableColumns;
   final int selectedIndex;
   final String dataSourceLabel;
-  final ValueChanged<int> onSelectIndex;
+  final String? schemaName;
+  final ValueChanged<String> onSelectClass;
 
   @override
   Widget build(BuildContext context) {
@@ -365,15 +603,18 @@ class _MobileBody extends StatelessWidget {
           ),
           Expanded(
             child: TabBarView(
+              physics: const NeverScrollableScrollPhysics(),
               children: <Widget>[
                 _TreeLayerPanel(
+                  classes: classes,
                   documents: documents,
                   selectedIndex: selectedIndex,
                   dataSourceLabel: dataSourceLabel,
-                  onSelectIndex: onSelectIndex,
+                  schemaName: schemaName,
+                  onSelectClass: onSelectClass,
                 ),
                 _JsonView(document: selected),
-                _TableView(documents: documents),
+                _TableView(documents: documents, columns: tableColumns),
                 _InspectorView(document: selected),
               ],
             ),
@@ -386,61 +627,69 @@ class _MobileBody extends StatelessWidget {
 
 class _TreeLayerPanel extends StatelessWidget {
   const _TreeLayerPanel({
+    required this.classes,
     required this.documents,
     required this.selectedIndex,
     required this.dataSourceLabel,
-    required this.onSelectIndex,
+    required this.schemaName,
+    required this.onSelectClass,
   });
 
+  final List<RealmClassSummary> classes;
   final List<Map<String, dynamic>> documents;
   final int selectedIndex;
   final String dataSourceLabel;
-  final ValueChanged<int> onSelectIndex;
+  final String? schemaName;
+  final ValueChanged<String> onSelectClass;
 
   @override
   Widget build(BuildContext context) {
     final Color selectedColor = Theme.of(context).colorScheme.primaryContainer;
+    final String selectedClass = schemaName ?? '';
 
     return ListView(
+      physics: const ClampingScrollPhysics(),
       children: <Widget>[
-        const ListTile(
-          dense: true,
-          title: Text('Widget Tree Layer'),
-          subtitle: Text('realm_gony3t > users collection'),
-        ),
+        const ListTile(dense: true, title: Text('CLASSES')),
         ListTile(
           dense: true,
           leading: const Icon(Icons.link, size: 18),
           title: Text(dataSourceLabel),
         ),
-        ExpansionTile(
-          initiallyExpanded: true,
-          leading: const Icon(Icons.storage),
-          title: const Text('realm_gony3t'),
-          children: <Widget>[
-            ExpansionTile(
-              initiallyExpanded: true,
-              leading: const Icon(Icons.table_chart),
-              title: Text('users (${documents.length})'),
-              children: List<Widget>.generate(documents.length, (int index) {
-                final Map<String, dynamic> doc = documents[index];
-                final bool isSelected = selectedIndex == index;
-                return ListTile(
-                  dense: true,
-                  selected: isSelected,
-                  selectedTileColor: selectedColor,
-                  leading: const Icon(Icons.description_outlined, size: 18),
-                  title: Text('${doc['_id']}'),
-                  subtitle: Text(
-                    '${doc['name'] ?? ''} • ${doc['status'] ?? ''}',
-                  ),
-                  onTap: () => onSelectIndex(index),
-                );
-              }),
-            ),
-          ],
-        ),
+        if (classes.isEmpty)
+          const ListTile(dense: true, title: Text('No classes found')),
+        ...classes.map((RealmClassSummary item) {
+          final bool isSelected = item.name == selectedClass;
+          return ListTile(
+            dense: true,
+            selected: isSelected,
+            selectedTileColor: selectedColor,
+            title: Text(item.name),
+            trailing: _CountBadge(count: item.count),
+            onTap: () => onSelectClass(item.name),
+          );
+        }),
       ],
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Text('$count'),
+      ),
     );
   }
 }
@@ -449,10 +698,22 @@ class _DataViewsPanel extends StatelessWidget {
   const _DataViewsPanel({
     required this.selectedDocument,
     required this.documents,
+    required this.tableColumns,
+    required this.displayRangeLabel,
+    required this.canPrev,
+    required this.canNext,
+    required this.onPrev,
+    required this.onNext,
   });
 
   final Map<String, dynamic>? selectedDocument;
   final List<Map<String, dynamic>> documents;
+  final List<String> tableColumns;
+  final String displayRangeLabel;
+  final bool canPrev;
+  final bool canNext;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
@@ -460,18 +721,42 @@ class _DataViewsPanel extends StatelessWidget {
       length: 3,
       child: Column(
         children: <Widget>[
-          const TabBar(
-            tabs: <Tab>[
-              Tab(text: 'JSON'),
-              Tab(text: 'Table'),
-              Tab(text: 'Inspector'),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: <Widget>[
+                Text(
+                  displayRangeLabel,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const Spacer(),
+                OutlinedButton(
+                  onPressed: canPrev ? onPrev : null,
+                  child: const Text('Prev'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: canNext ? onNext : null,
+                  child: const Text('Next'),
+                ),
+                const SizedBox(width: 12),
+                const TabBar(
+                  isScrollable: true,
+                  tabs: <Tab>[
+                    Tab(text: 'JSON'),
+                    Tab(text: 'Table'),
+                    Tab(text: 'Inspector'),
+                  ],
+                ),
+              ],
+            ),
           ),
           Expanded(
             child: TabBarView(
+              physics: const NeverScrollableScrollPhysics(),
               children: <Widget>[
                 _JsonView(document: selectedDocument),
-                _TableView(documents: documents),
+                _TableView(documents: documents, columns: tableColumns),
                 _InspectorView(document: selectedDocument),
               ],
             ),
@@ -493,18 +778,27 @@ class _JsonView extends StatelessWidget {
       return const Center(child: Text('No document selected'));
     }
 
-    final String pretty = const JsonEncoder.withIndent('  ').convert(document);
+    final String pretty = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(_toJsonSafe(document));
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Container(
+      child: SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: Theme.of(context).dividerColor),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: SingleChildScrollView(
-          child: SelectableText(pretty, style: const TextStyle(height: 1.4)),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).dividerColor),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                pretty,
+                style: const TextStyle(height: 1.4),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -512,9 +806,10 @@ class _JsonView extends StatelessWidget {
 }
 
 class _TableView extends StatelessWidget {
-  const _TableView({required this.documents});
+  const _TableView({required this.documents, required this.columns});
 
   final List<Map<String, dynamic>> documents;
+  final List<String> columns;
 
   @override
   Widget build(BuildContext context) {
@@ -522,27 +817,28 @@ class _TableView extends StatelessWidget {
       return const Center(child: Text('No data found for this query'));
     }
 
+    final List<String> effectiveColumns = columns.isEmpty
+        ? documents.first.keys.toList(growable: false)
+        : columns;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
-      child: DataTable(
-        columns: const <DataColumn>[
-          DataColumn(label: Text('_id')),
-          DataColumn(label: Text('name')),
-          DataColumn(label: Text('status')),
-          DataColumn(label: Text('age')),
-          DataColumn(label: Text('city')),
-        ],
-        rows: documents.map((Map<String, dynamic> doc) {
-          return DataRow(
-            cells: <DataCell>[
-              DataCell(Text('${doc['_id']}')),
-              DataCell(Text('${doc['name'] ?? ''}')),
-              DataCell(Text('${doc['status'] ?? ''}')),
-              DataCell(Text('${doc['age'] ?? ''}')),
-              DataCell(Text('${doc['city'] ?? ''}')),
-            ],
-          );
-        }).toList(),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: effectiveColumns
+              .map((String key) => DataColumn(label: Text(key)))
+              .toList(growable: false),
+          rows: documents
+              .map((Map<String, dynamic> doc) {
+                return DataRow(
+                  cells: effectiveColumns
+                      .map((String key) => DataCell(Text('${doc[key] ?? ''}')))
+                      .toList(growable: false),
+                );
+              })
+              .toList(growable: false),
+        ),
       ),
     );
   }
@@ -561,19 +857,21 @@ class _InspectorView extends StatelessWidget {
 
     return Column(
       children: <Widget>[
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        DecoratedBox(
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(color: Theme.of(context).dividerColor),
             ),
           ),
-          child: const Row(
-            children: <Widget>[
-              SizedBox(width: 150, child: Text('Key')),
-              Expanded(child: Text('Value')),
-              SizedBox(width: 90, child: Text('Type')),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: const Row(
+              children: <Widget>[
+                SizedBox(width: 150, child: Text('Key')),
+                Expanded(child: Text('Value')),
+                SizedBox(width: 90, child: Text('Type')),
+              ],
+            ),
           ),
         ),
         Expanded(
@@ -716,6 +1014,36 @@ String _displayValue(dynamic value) {
     return 'null';
   }
   return '$value';
+}
+
+String _safeJsonEncode(Object? value) {
+  return jsonEncode(_toJsonSafe(value));
+}
+
+Object? _toJsonSafe(Object? value) {
+  if (value == null || value is num || value is bool || value is String) {
+    return value;
+  }
+
+  if (value is DateTime) {
+    return value.toIso8601String();
+  }
+
+  if (value is Map) {
+    final Map<String, dynamic> output = <String, dynamic>{};
+    value.forEach((dynamic key, dynamic val) {
+      output['$key'] = _toJsonSafe(val);
+    });
+    return output;
+  }
+
+  if (value is Iterable) {
+    return value
+        .map((Object? item) => _toJsonSafe(item))
+        .toList(growable: false);
+  }
+
+  return value.toString();
 }
 
 String _fileNameFromPath(String path) {
