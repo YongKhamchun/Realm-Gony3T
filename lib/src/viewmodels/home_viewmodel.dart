@@ -567,7 +567,7 @@ class HomeNotifier extends Notifier<HomeState> {
 
     if (state.query.trim().isNotEmpty) {
       final int targetStart = state.normalizedPageStart - HomeState.pageSize;
-      state = state.copyWith(pageStart: targetStart, selectedIndex: 0);
+      _goQueryPageWithLoading(targetStart);
       return;
     }
 
@@ -588,7 +588,7 @@ class HomeNotifier extends Notifier<HomeState> {
 
     if (state.query.trim().isNotEmpty) {
       final int targetStart = state.normalizedPageStart + HomeState.pageSize;
-      state = state.copyWith(pageStart: targetStart, selectedIndex: 0);
+      _goQueryPageWithLoading(targetStart);
       return;
     }
 
@@ -600,6 +600,24 @@ class HomeNotifier extends Notifier<HomeState> {
     final int targetStart = state.normalizedPageStart + HomeState.pageSize;
     final int token = ++_activeLoadToken;
     _loadClassPage(className, pageStart: targetStart, token: token);
+  }
+
+  void _goQueryPageWithLoading(int targetStart) {
+    final int token = ++_activeLoadToken;
+    state = state.copyWith(isLoadingData: true);
+
+    Future<void>(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (token != _activeLoadToken) {
+        return;
+      }
+
+      state = state.copyWith(
+        pageStart: targetStart,
+        selectedIndex: 0,
+        isLoadingData: false,
+      );
+    });
   }
 }
 
