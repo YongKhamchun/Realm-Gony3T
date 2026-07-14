@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,12 +30,77 @@ class InspectorTreeExpansionNotifier extends Notifier<Map<String, bool>> {
   }
 }
 
-class HomeDataViewsPanel extends StatelessWidget {
+const int _jsonPreviewLimit = 5;
+
+final _jsonPrettyProvider = FutureProvider.family<String, _JsonRenderRequest>((
+  Ref ref,
+  _JsonRenderRequest request,
+) async {
+  await Future<void>.delayed(const Duration(milliseconds: 220));
+  final List<Map<String, dynamic>> documentsForRender =
+      request.documents.length <= _jsonPreviewLimit
+      ? request.documents
+      : request.documents.take(_jsonPreviewLimit).toList(growable: false);
+  return _buildPrettyJson(documentsForRender);
+});
+
+class _JsonRenderRequest {
+  const _JsonRenderRequest({required this.documents});
+
+  final List<Map<String, dynamic>> documents;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _JsonRenderRequest && identical(documents, other.documents);
+  }
+
+  @override
+  int get hashCode {
+    return identityHashCode(documents);
+  }
+}
+
+final NotifierProvider<_DataViewTabIndexNotifier, int>
+_dataViewTabIndexProvider = NotifierProvider<_DataViewTabIndexNotifier, int>(
+  _DataViewTabIndexNotifier.new,
+);
+
+class _DataViewTabIndexNotifier extends Notifier<int> {
+  @override
+  int build() => 1;
+
+  void select(int index) {
+    state = index;
+  }
+}
+
+final NotifierProvider<_LoadedDataTabsNotifier, Set<int>>
+_loadedDataTabsProvider = NotifierProvider<_LoadedDataTabsNotifier, Set<int>>(
+  _LoadedDataTabsNotifier.new,
+);
+
+class _LoadedDataTabsNotifier extends Notifier<Set<int>> {
+  @override
+  Set<int> build() => <int>{1};
+
+  void markLoaded(int index) {
+    if (state.contains(index)) {
+      return;
+    }
+    state = <int>{...state, index};
+  }
+}
+
+class HomeDataViewsPanel extends ConsumerWidget {
   const HomeDataViewsPanel({
     super.key,
     required this.documents,
     required this.tableColumns,
     required this.displayRangeLabel,
+    required this.currentDepth,
+    required this.isLoading,
+    required this.depthOptions,
+    required this.onSelectDepth,
     required this.canPrev,
     required this.canNext,
     required this.onPrev,
@@ -44,110 +110,198 @@ class HomeDataViewsPanel extends StatelessWidget {
   final List<Map<String, dynamic>> documents;
   final List<String> tableColumns;
   final String displayRangeLabel;
+  final int currentDepth;
+  final bool isLoading;
+  final List<int> depthOptions;
+  final ValueChanged<int> onSelectDepth;
   final bool canPrev;
   final bool canNext;
   final VoidCallback onPrev;
   final VoidCallback onNext;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final int activeTabIndex = ref.watch(_dataViewTabIndexProvider);
+    final Set<int> loadedTabs = ref.watch(_loadedDataTabsProvider);
+
     return DefaultTabController(
       initialIndex: 1,
       length: 3,
-      child: Column(
+      child: Stack(
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Row(
-              children: <Widget>[
-                Text(
-                  displayRangeLabel,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const Spacer(),
-                OutlinedButton(
-                  onPressed: canPrev ? onPrev : null,
-                  child: const Text('Prev'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: canNext ? onNext : null,
-                  child: const Text('Next'),
-                ),
-                const SizedBox(width: 12),
-                const TabBar(
-                  isScrollable: true,
-                  tabs: <Tab>[
-                    Tab(text: 'JSON'),
-                    Tab(text: 'Table'),
-                    Tab(text: 'Inspector'),
+          Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: Row(
+                  children: <Widget>[
+                    Text(
+                      displayRangeLabel,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const Spacer(),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: currentDepth,
+                            isDense: true,
+                            onChanged: isLoading
+                                ? null
+                                : (int? value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+                                    onSelectDepth(value);
+                                  },
+                            items: depthOptions
+                                .map(
+                                  (int depth) => DropdownMenuItem<int>(
+                                    value: depth,
+                                    child: Text(
+                                      depth < 0
+                                          ? 'Depth: Full'
+                                          : 'Depth: $depth',
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: isLoading || !canPrev ? null : onPrev,
+                      child: const Text('Prev'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: isLoading || !canNext ? null : onNext,
+                      child: const Text('Next'),
+                    ),
+                    const SizedBox(width: 12),
+                    TabBar(
+                      isScrollable: true,
+                      onTap: (int index) {
+                        ref
+                            .read(_dataViewTabIndexProvider.notifier)
+                            .select(index);
+                        ref
+                            .read(_loadedDataTabsProvider.notifier)
+                            .markLoaded(index);
+                      },
+                      tabs: <Tab>[
+                        Tab(text: 'JSON'),
+                        Tab(text: 'Table'),
+                        Tab(text: 'Inspector'),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              Expanded(
+                child: IndexedStack(
+                  index: activeTabIndex,
+                  children: <Widget>[
+                    loadedTabs.contains(0)
+                        ? HomeJsonView(
+                            key: const PageStorageKey<String>('home-data-json'),
+                            documents: documents,
+                          )
+                        : const _DeferredTabPlaceholder(
+                            label: 'Open JSON tab to load records',
+                          ),
+                    loadedTabs.contains(1)
+                        ? HomeTableView(
+                            key: const PageStorageKey<String>(
+                              'home-data-table',
+                            ),
+                            documents: documents,
+                            columns: tableColumns,
+                          )
+                        : const _DeferredTabPlaceholder(
+                            label: 'Open Table tab to load records',
+                          ),
+                    loadedTabs.contains(2)
+                        ? HomeInspectorView(
+                            key: const PageStorageKey<String>(
+                              'home-data-inspector',
+                            ),
+                            documents: documents,
+                          )
+                        : const _DeferredTabPlaceholder(
+                            label: 'Open Inspector tab to inspect tree',
+                          ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: TabBarView(
-              physics: const NeverScrollableScrollPhysics(),
-              children: <Widget>[
-                HomeJsonView(documents: documents),
-                HomeTableView(documents: documents, columns: tableColumns),
-                HomeInspectorView(documents: documents),
-              ],
+          if (isLoading)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: 0.55),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
+                        ),
+                        SizedBox(height: 10),
+                        Text('Loading data...'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 }
 
-class HomeJsonView extends StatefulWidget {
+class _DeferredTabPlaceholder extends StatelessWidget {
+  const _DeferredTabPlaceholder({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+    );
+  }
+}
+
+class HomeJsonView extends ConsumerWidget {
   const HomeJsonView({super.key, required this.documents});
 
   final List<Map<String, dynamic>> documents;
 
   @override
-  State<HomeJsonView> createState() => _HomeJsonViewState();
-}
-
-class _HomeJsonViewState extends State<HomeJsonView> {
-  late Future<String> _prettyFuture;
-  Timer? _debounce;
-
-  @override
-  void initState() {
-    super.initState();
-    _prettyFuture = _buildPrettyJson(widget.documents);
-  }
-
-  @override
-  void didUpdateWidget(covariant HomeJsonView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.documents, widget.documents)) {
-      _debounce?.cancel();
-      _debounce = Timer(const Duration(milliseconds: 220), () {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _prettyFuture = _buildPrettyJson(widget.documents);
-        });
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.documents.isEmpty) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (documents.isEmpty) {
       return const Center(child: Text('No data found for this page'));
     }
+
+    final AsyncValue<String> prettyJsonAsync = ref.watch(
+      _jsonPrettyProvider(_JsonRenderRequest(documents: documents)),
+    );
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -160,31 +314,71 @@ class _HomeJsonViewState extends State<HomeJsonView> {
           ),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: FutureBuilder<String>(
-              future: _prettyFuture,
-              builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2.2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  );
-                }
-
-                return CustomScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  slivers: <Widget>[
-                    SliverToBoxAdapter(
-                      child: SelectableText(
-                        snapshot.data!,
-                        style: const TextStyle(height: 1.4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        'Remark: JSON tab uses a separate query view and may not match Table/Inspector behavior.',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+                if (documents.length > _jsonPreviewLimit)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      'JSON shows only first $_jsonPreviewLimit records for performance.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                Expanded(
+                  child: prettyJsonAsync.when(
+                    data: (String data) {
+                      return CustomScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        slivers: <Widget>[
+                          SliverToBoxAdapter(
+                            child: SelectableText(
+                              data,
+                              style: const TextStyle(height: 1.4),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () {
+                      return const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        ),
+                      );
+                    },
+                    error: (Object _, StackTrace stackTrace) {
+                      return const Center(
+                        child: Text('Unable to render JSON for this dataset'),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -302,7 +496,7 @@ class _TableDataRow extends StatelessWidget {
         ? Theme.of(context).colorScheme.surface
         : Theme.of(context).colorScheme.surfaceContainerLowest;
 
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: bg,
         border: Border(
@@ -508,6 +702,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
     );
 
     return ExpansionTile(
+      key: PageStorageKey<String>('inspector-expand-$nodePath'),
       tilePadding: EdgeInsets.only(left: 12 + depth * 14, right: 8),
       childrenPadding: EdgeInsets.zero,
       initiallyExpanded: isExpanded,
@@ -529,9 +724,53 @@ class HomeInspectorNodeTile extends ConsumerWidget {
 }
 
 Future<String> _buildPrettyJson(List<Map<String, dynamic>> documents) {
-  return Future<String>.delayed(Duration.zero, () {
-    return const JsonEncoder.withIndent('  ').convert(toJsonSafe(documents));
-  });
+  return _buildPrettyJsonAsync(documents);
+}
+
+Future<String> _buildPrettyJsonAsync(
+  List<Map<String, dynamic>> documents,
+) async {
+  try {
+    return await compute<List<Map<String, dynamic>>, String>(
+      _encodePrettyJson,
+      documents,
+    );
+  } catch (_) {
+    return _encodePrettyJsonChunked(documents);
+  }
+}
+
+String _encodePrettyJson(List<Map<String, dynamic>> documents) {
+  return const JsonEncoder.withIndent('  ').convert(toJsonSafe(documents));
+}
+
+Future<String> _encodePrettyJsonChunked(
+  List<Map<String, dynamic>> documents,
+) async {
+  final StringBuffer buffer = StringBuffer()..writeln('[');
+  final JsonEncoder encoder = const JsonEncoder.withIndent('  ');
+
+  for (int i = 0; i < documents.length; i++) {
+    final String encoded = encoder.convert(toJsonSafe(documents[i]));
+    final String withArrayIndent = encoded
+        .split('\n')
+        .map((String line) => '  $line')
+        .join('\n');
+    buffer.write(withArrayIndent);
+
+    if (i < documents.length - 1) {
+      buffer.writeln(',');
+    } else {
+      buffer.writeln();
+    }
+
+    if (i.isEven) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  buffer.write(']');
+  return buffer.toString();
 }
 
 class HomeInspectorRow extends StatelessWidget {

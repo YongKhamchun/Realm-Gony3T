@@ -201,6 +201,7 @@ class RealmUserRepository {
     String className, {
     int offset = 0,
     int? limit,
+    int? maxDepth,
   }) {
     final Realm? realm = _realm;
     if (realm == null) {
@@ -219,7 +220,7 @@ class RealmUserRepository {
     }
 
     return segment
-        .map((RealmObject object) => _toMap(object))
+        .map((RealmObject object) => _toMap(object, maxDepth: maxDepth))
         .toList(growable: false);
   }
 
@@ -301,12 +302,21 @@ class RealmUserRepository {
     }
   }
 
-  Map<String, dynamic> _toMap(RealmObject object) {
+  Map<String, dynamic> _toMap(
+    RealmObject object, {
+    int? maxDepth,
+    int depth = 0,
+  }) {
     final Map<String, dynamic> output = <String, dynamic>{};
     for (final SchemaProperty prop in object.objectSchema) {
       try {
         final String fieldName = prop.mapTo;
-        final dynamic value = _readValue(object, prop);
+        final dynamic value = _readValue(
+          object,
+          prop,
+          maxDepth: maxDepth,
+          depth: depth,
+        );
         output[fieldName] = value;
       } catch (e) {
         // Gracefully skip fields that cannot be read
@@ -319,17 +329,25 @@ class RealmUserRepository {
     return output;
   }
 
-  dynamic _readValue(RealmObject object, SchemaProperty prop) {
+  dynamic _readValue(
+    RealmObject object,
+    SchemaProperty prop, {
+    int? maxDepth,
+    required int depth,
+  }) {
     try {
       switch (prop.collectionType) {
         case RealmCollectionType.none:
           final dynamic val = object.dynamic.get<Object?>(prop.name);
-          return _normalizeValue(val);
+          return _normalizeValue(val, maxDepth: maxDepth, depth: depth + 1);
         case RealmCollectionType.list:
           try {
             return object.dynamic
                 .getList<Object?>(prop.name)
-                .map((Object? e) => _normalizeValue(e))
+                .map(
+                  (Object? e) =>
+                      _normalizeValue(e, maxDepth: maxDepth, depth: depth + 1),
+                )
                 .toList(growable: false);
           } catch (_) {
             return <dynamic>[];
@@ -339,8 +357,14 @@ class RealmUserRepository {
             return object.dynamic
                 .getMap<Object?>(prop.name)
                 .map(
-                  (String key, Object? value) =>
-                      MapEntry<String, dynamic>(key, _normalizeValue(value)),
+                  (String key, Object? value) => MapEntry<String, dynamic>(
+                    key,
+                    _normalizeValue(
+                      value,
+                      maxDepth: maxDepth,
+                      depth: depth + 1,
+                    ),
+                  ),
                 )
                 .cast<String, dynamic>();
           } catch (_) {
@@ -350,22 +374,42 @@ class RealmUserRepository {
           try {
             return object.dynamic
                 .getSet<Object?>(prop.name)
-                .map((Object? e) => _normalizeValue(e))
+                .map(
+                  (Object? e) =>
+                      _normalizeValue(e, maxDepth: maxDepth, depth: depth + 1),
+                )
                 .toList(growable: false);
           } catch (_) {
             return <dynamic>[];
           }
         default:
-          return _normalizeValue(object.dynamic.get<Object?>(prop.name));
+          return _normalizeValue(
+            object.dynamic.get<Object?>(prop.name),
+            maxDepth: maxDepth,
+            depth: depth + 1,
+          );
       }
     } catch (_) {
       return null;
     }
   }
 
-  dynamic _normalizeValue(Object? value) {
+  dynamic _normalizeValue(Object? value, {int? maxDepth, required int depth}) {
+    if (maxDepth != null && depth > maxDepth) {
+      if (value is RealmObject || value is EmbeddedObject) {
+        return <String, dynamic>{'_truncated': true};
+      }
+      if (value is Iterable) {
+        return <dynamic>[];
+      }
+      if (value is Map) {
+        return <String, dynamic>{};
+      }
+      return value;
+    }
+
     if (value is RealmObject) {
-      return _toMap(value);
+      return _toMap(value, maxDepth: maxDepth, depth: depth);
     }
     if (value is EmbeddedObject) {
       final Map<String, dynamic> output = <String, dynamic>{};
@@ -373,6 +417,8 @@ class RealmUserRepository {
         try {
           output[prop.mapTo] = _normalizeValue(
             value.dynamic.get<Object?>(prop.name),
+            maxDepth: maxDepth,
+            depth: depth + 1,
           );
         } catch (_) {
           output[prop.name] = null;
