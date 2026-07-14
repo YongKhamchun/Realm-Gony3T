@@ -1,6 +1,33 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+final NotifierProvider<InspectorTreeExpansionNotifier, Map<String, bool>>
+inspectorTreeExpansionProvider =
+    NotifierProvider<InspectorTreeExpansionNotifier, Map<String, bool>>(
+      InspectorTreeExpansionNotifier.new,
+    );
+
+class InspectorTreeExpansionNotifier extends Notifier<Map<String, bool>> {
+  @override
+  Map<String, bool> build() => <String, bool>{};
+
+  void replaceAll(Map<String, bool> next) {
+    state = Map<String, bool>.unmodifiable(next);
+  }
+
+  void setExpanded(String nodePath, bool expanded) {
+    final Map<String, bool> next = <String, bool>{...state};
+    if (expanded) {
+      next[nodePath] = true;
+    } else {
+      next.remove(nodePath);
+    }
+    state = next;
+  }
+}
 
 class HomeDataViewsPanel extends StatelessWidget {
   const HomeDataViewsPanel({
@@ -25,6 +52,7 @@ class HomeDataViewsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
+      initialIndex: 1,
       length: 3,
       child: Column(
         children: <Widget>[
@@ -74,20 +102,52 @@ class HomeDataViewsPanel extends StatelessWidget {
   }
 }
 
-class HomeJsonView extends StatelessWidget {
+class HomeJsonView extends StatefulWidget {
   const HomeJsonView({super.key, required this.documents});
 
   final List<Map<String, dynamic>> documents;
 
   @override
+  State<HomeJsonView> createState() => _HomeJsonViewState();
+}
+
+class _HomeJsonViewState extends State<HomeJsonView> {
+  late Future<String> _prettyFuture;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _prettyFuture = _buildPrettyJson(widget.documents);
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeJsonView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.documents, widget.documents)) {
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(milliseconds: 220), () {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _prettyFuture = _buildPrettyJson(widget.documents);
+        });
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (documents.isEmpty) {
+    if (widget.documents.isEmpty) {
       return const Center(child: Text('No data found for this page'));
     }
-
-    final String pretty = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(toJsonSafe(documents));
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -100,16 +160,31 @@ class HomeJsonView extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: CustomScrollView(
-              physics: const ClampingScrollPhysics(),
-              slivers: <Widget>[
-                SliverToBoxAdapter(
-                  child: SelectableText(
-                    pretty,
-                    style: const TextStyle(height: 1.4),
-                  ),
-                ),
-              ],
+            child: FutureBuilder<String>(
+              future: _prettyFuture,
+              builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                  );
+                }
+
+                return CustomScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  slivers: <Widget>[
+                    SliverToBoxAdapter(
+                      child: SelectableText(
+                        snapshot.data!,
+                        style: const TextStyle(height: 1.4),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -268,14 +343,45 @@ class _TableCell extends StatelessWidget {
   }
 }
 
-class HomeInspectorView extends StatelessWidget {
+class HomeInspectorView extends ConsumerStatefulWidget {
   const HomeInspectorView({super.key, required this.documents});
 
   final List<Map<String, dynamic>> documents;
 
   @override
+  ConsumerState<HomeInspectorView> createState() => _HomeInspectorViewState();
+}
+
+class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
+  @override
+  void initState() {
+    super.initState();
+    _scheduleCollapseAll();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeInspectorView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.documents, widget.documents)) {
+      _scheduleCollapseAll();
+    }
+  }
+
+  void _scheduleCollapseAll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      ref
+          .read(inspectorTreeExpansionProvider.notifier)
+          .replaceAll(const <String, bool>{});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (documents.isEmpty) {
+    if (widget.documents.isEmpty) {
       return const Center(child: Text('No data found for this page'));
     }
 
@@ -307,14 +413,16 @@ class HomeInspectorView extends StatelessWidget {
                   BuildContext context,
                   int index,
                 ) {
-                  final Map<String, dynamic> doc = documents[index];
+                  final Map<String, dynamic> doc = widget.documents[index];
                   final String key = '#$index';
                   return HomeInspectorNodeTile(
+                    key: ValueKey<String>(key),
                     keyLabel: key,
                     value: doc,
                     depth: 0,
+                    nodePath: key,
                   );
-                }, childCount: documents.length),
+                }, childCount: widget.documents.length),
               ),
             ],
           ),
@@ -324,20 +432,62 @@ class HomeInspectorView extends StatelessWidget {
   }
 }
 
-class HomeInspectorNodeTile extends StatelessWidget {
+class HomeInspectorNodeTile extends ConsumerWidget {
   const HomeInspectorNodeTile({
     super.key,
     required this.keyLabel,
     required this.value,
     required this.depth,
+    required this.nodePath,
   });
 
   final String keyLabel;
   final dynamic value;
   final int depth;
+  final String nodePath;
+
+  List<Widget> _buildChildren() {
+    final dynamic value = this.value;
+    if (value is Map<String, dynamic>) {
+      final List<Widget> items = <Widget>[];
+      value.forEach((String key, dynamic childValue) {
+        final String childPath = '$nodePath.$key';
+        items.add(
+          HomeInspectorNodeTile(
+            key: ValueKey<String>(childPath),
+            keyLabel: key,
+            value: childValue,
+            depth: depth + 1,
+            nodePath: childPath,
+          ),
+        );
+      });
+      return items;
+    }
+
+    if (value is List<dynamic>) {
+      final List<Widget> items = <Widget>[];
+      for (int i = 0; i < value.length; i++) {
+        final String childPath = '$nodePath[$i]';
+        items.add(
+          HomeInspectorNodeTile(
+            key: ValueKey<String>(childPath),
+            keyLabel: '[$i]',
+            value: value[i],
+            depth: depth + 1,
+            nodePath: childPath,
+          ),
+        );
+      }
+      return items;
+    }
+
+    return const <Widget>[];
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dynamic value = this.value;
     final bool isMap = value is Map<String, dynamic>;
     final bool isList = value is List<dynamic>;
     final bool isComplex = isMap || isList;
@@ -351,35 +501,21 @@ class HomeInspectorNodeTile extends StatelessWidget {
       );
     }
 
-    final List<Widget> children = <Widget>[];
-    if (isMap) {
-      final Map<String, dynamic> map = value as Map<String, dynamic>;
-      map.forEach((String key, dynamic childValue) {
-        children.add(
-          HomeInspectorNodeTile(
-            keyLabel: key,
-            value: childValue,
-            depth: depth + 1,
-          ),
-        );
-      });
-    } else {
-      final List<dynamic> list = value as List<dynamic>;
-      for (int i = 0; i < list.length; i++) {
-        children.add(
-          HomeInspectorNodeTile(
-            keyLabel: '[$i]',
-            value: list[i],
-            depth: depth + 1,
-          ),
-        );
-      }
-    }
+    final bool isExpanded = ref.watch(
+      inspectorTreeExpansionProvider.select(
+        (Map<String, bool> state) => state[nodePath] ?? false,
+      ),
+    );
 
     return ExpansionTile(
       tilePadding: EdgeInsets.only(left: 12 + depth * 14, right: 8),
       childrenPadding: EdgeInsets.zero,
-      initiallyExpanded: false,
+      initiallyExpanded: isExpanded,
+      onExpansionChanged: (bool expanded) {
+        ref
+            .read(inspectorTreeExpansionProvider.notifier)
+            .setExpanded(nodePath, expanded);
+      },
       title: Row(
         children: <Widget>[
           SizedBox(width: 150, child: Text(keyLabel)),
@@ -387,9 +523,15 @@ class HomeInspectorNodeTile extends StatelessWidget {
           SizedBox(width: 90, child: Text(valueType(value))),
         ],
       ),
-      children: children,
+      children: isExpanded ? _buildChildren() : const <Widget>[],
     );
   }
+}
+
+Future<String> _buildPrettyJson(List<Map<String, dynamic>> documents) {
+  return Future<String>.delayed(Duration.zero, () {
+    return const JsonEncoder.withIndent('  ').convert(toJsonSafe(documents));
+  });
 }
 
 class HomeInspectorRow extends StatelessWidget {

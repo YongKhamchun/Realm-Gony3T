@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:realm_gony3t/realm_gony3t.dart';
 
 class HomeMobileBody extends StatelessWidget {
@@ -59,7 +60,7 @@ class HomeMobileBody extends StatelessWidget {
   }
 }
 
-class HomeTreeLayerPanel extends StatefulWidget {
+class HomeTreeLayerPanel extends ConsumerStatefulWidget {
   const HomeTreeLayerPanel({
     super.key,
     required this.classes,
@@ -78,12 +79,23 @@ class HomeTreeLayerPanel extends StatefulWidget {
   final ValueChanged<String> onSelectClass;
 
   @override
-  State<HomeTreeLayerPanel> createState() => _HomeTreeLayerPanelState();
+  ConsumerState<HomeTreeLayerPanel> createState() => _HomeTreeLayerPanelState();
 }
 
-class _HomeTreeLayerPanelState extends State<HomeTreeLayerPanel> {
+class _HomeTreeLayerPanelState extends ConsumerState<HomeTreeLayerPanel> {
   final TextEditingController _classSearchController = TextEditingController();
-  String _classSearch = '';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final String query = ref.read(homeProvider).classSearchQuery;
+    if (_classSearchController.text != query) {
+      _classSearchController.value = TextEditingValue(
+        text: query,
+        selection: TextSelection.collapsed(offset: query.length),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -93,6 +105,7 @@ class _HomeTreeLayerPanelState extends State<HomeTreeLayerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final HomeState state = ref.watch(homeProvider);
     final ThemeData theme = Theme.of(context);
     final Color selectedColor = theme.colorScheme.primary.withValues(
       alpha: 0.18,
@@ -101,7 +114,7 @@ class _HomeTreeLayerPanelState extends State<HomeTreeLayerPanel> {
     final Color selectedTextColor = theme.colorScheme.primary;
     final String selectedClass = widget.schemaName ?? '';
     final Color bg = theme.colorScheme.surface;
-    final String search = _classSearch.trim().toLowerCase();
+    final String search = state.classSearchQuery.trim().toLowerCase();
     final List<RealmClassSummary> filteredClasses = search.isEmpty
         ? widget.classes
         : widget.classes
@@ -137,9 +150,7 @@ class _HomeTreeLayerPanelState extends State<HomeTreeLayerPanel> {
                   prefixIcon: Icon(Icons.search),
                 ),
                 onChanged: (String value) {
-                  setState(() {
-                    _classSearch = value;
-                  });
+                  ref.read(homeProvider.notifier).updateClassSearchQuery(value);
                 },
               ),
             ),

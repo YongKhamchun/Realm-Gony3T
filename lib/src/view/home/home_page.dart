@@ -14,10 +14,6 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   final TextEditingController _queryController = TextEditingController();
-  double _leftPanelWidth = 310;
-
-  static const double _minLeftPanelWidth = 220;
-  static const double _maxLeftPanelWidth = 520;
 
   @override
   void dispose() {
@@ -233,11 +229,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                     return Row(
                       children: <Widget>[
                         SizedBox(
-                          width: _leftPanelWidth.clamp(
-                            _minLeftPanelWidth,
+                          width: state.leftPanelWidth.clamp(
+                            HomeNotifier.minLeftPanelWidth,
                             (viewportWidth * 0.6).clamp(
-                              _minLeftPanelWidth,
-                              _maxLeftPanelWidth,
+                              HomeNotifier.minLeftPanelWidth,
+                              HomeNotifier.maxLeftPanelWidth,
                             ),
                           ),
                           child: HomeTreeLayerPanel(
@@ -255,19 +251,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                             behavior: HitTestBehavior.translucent,
                             onHorizontalDragUpdate:
                                 (DragUpdateDetails details) {
-                                  setState(() {
-                                    final double maxAllowed =
-                                        (viewportWidth * 0.6).clamp(
-                                          _minLeftPanelWidth,
-                                          _maxLeftPanelWidth,
-                                        );
-                                    _leftPanelWidth =
-                                        (_leftPanelWidth + details.delta.dx)
-                                            .clamp(
-                                              _minLeftPanelWidth,
-                                              maxAllowed,
-                                            );
-                                  });
+                                  notifier.adjustLeftPanelWidth(
+                                    delta: details.delta.dx,
+                                    viewportWidth: viewportWidth,
+                                  );
                                 },
                             child: const SizedBox(
                               width: 10,

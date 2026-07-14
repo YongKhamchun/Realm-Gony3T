@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:realm_gony3t/realm_gony3t.dart';
 
@@ -11,11 +12,13 @@ class HomeState {
   const HomeState({
     required this.documents,
     required this.query,
+    required this.classSearchQuery,
     required this.pageStart,
     required this.selectedIndex,
     required this.dataSourceLabel,
     required this.classes,
     required this.viewportWidth,
+    required this.leftPanelWidth,
     required this.lastEncryptionKeyInput,
     this.openedSchemaName,
     this.loadError,
@@ -40,11 +43,13 @@ class HomeState {
         },
       ],
       query: '',
+      classSearchQuery: '',
       pageStart: 0,
       selectedIndex: 0,
       dataSourceLabel: 'Mock data',
       classes: <RealmClassSummary>[],
       viewportWidth: 0,
+      leftPanelWidth: 310,
       lastEncryptionKeyInput: '',
       openedSchemaName: null,
       loadError: null,
@@ -55,6 +60,7 @@ class HomeState {
 
   final List<Map<String, dynamic>> documents;
   final String query;
+  final String classSearchQuery;
   final int pageStart;
   final int selectedIndex;
   final String dataSourceLabel;
@@ -62,11 +68,13 @@ class HomeState {
   final String? openedSchemaName;
   final String? loadError;
   final double viewportWidth;
+  final double leftPanelWidth;
   final String lastEncryptionKeyInput;
 
   HomeState copyWith({
     List<Map<String, dynamic>>? documents,
     String? query,
+    String? classSearchQuery,
     int? pageStart,
     int? selectedIndex,
     String? dataSourceLabel,
@@ -74,11 +82,13 @@ class HomeState {
     String? openedSchemaName,
     Object? loadError = _noChange,
     double? viewportWidth,
+    double? leftPanelWidth,
     String? lastEncryptionKeyInput,
   }) {
     return HomeState(
       documents: documents ?? this.documents,
       query: query ?? this.query,
+      classSearchQuery: classSearchQuery ?? this.classSearchQuery,
       pageStart: pageStart ?? this.pageStart,
       selectedIndex: selectedIndex ?? this.selectedIndex,
       dataSourceLabel: dataSourceLabel ?? this.dataSourceLabel,
@@ -88,6 +98,7 @@ class HomeState {
           ? this.loadError
           : loadError as String?,
       viewportWidth: viewportWidth ?? this.viewportWidth,
+      leftPanelWidth: leftPanelWidth ?? this.leftPanelWidth,
       lastEncryptionKeyInput:
           lastEncryptionKeyInput ?? this.lastEncryptionKeyInput,
     );
@@ -142,7 +153,7 @@ class HomeState {
   }
 
   int get normalizedPageStart {
-    final int total = filteredDocuments.length;
+    final int total = selectedClassSummary?.count ?? documents.length;
     if (total <= 0) {
       return 0;
     }
@@ -159,20 +170,13 @@ class HomeState {
   }
 
   List<Map<String, dynamic>> get pagedDocuments {
-    final List<Map<String, dynamic>> input = filteredDocuments;
-    if (input.isEmpty) {
-      return const <Map<String, dynamic>>[];
-    }
-
-    final int start = normalizedPageStart;
-    final int end = (start + pageSize).clamp(0, input.length);
-    return input.sublist(start, end);
+    return filteredDocuments;
   }
 
   bool get canPrevPage => normalizedPageStart > 0;
 
   bool get canNextPage {
-    final int total = filteredDocuments.length;
+    final int total = selectedClassSummary?.count ?? documents.length;
     if (total <= 0) {
       return false;
     }
@@ -190,7 +194,7 @@ class HomeState {
   }
 
   String get displayRangeLabel {
-    final List<Map<String, dynamic>> docs = pagedDocuments;
+    final List<Map<String, dynamic>> docs = documents;
     if (docs.isEmpty) {
       return 'Display 0 - 0';
     }
@@ -200,6 +204,9 @@ class HomeState {
 
 class HomeNotifier extends Notifier<HomeState> {
   final RealmUserRepository _repository = RealmUserRepository();
+  static const double minLeftPanelWidth = 220;
+  static const double maxLeftPanelWidth = 520;
+  int _activeLoadToken = 0;
 
   @override
   HomeState build() {
@@ -214,11 +221,36 @@ class HomeNotifier extends Notifier<HomeState> {
     return width < 900;
   }
 
+  void adjustLeftPanelWidth({
+    required double delta,
+    required double viewportWidth,
+  }) {
+    final double maxAllowed = (viewportWidth * 0.6).clamp(
+      minLeftPanelWidth,
+      maxLeftPanelWidth,
+    );
+    final double nextWidth = (state.leftPanelWidth + delta).clamp(
+      minLeftPanelWidth,
+      maxAllowed,
+    );
+    if (nextWidth == state.leftPanelWidth) {
+      return;
+    }
+    state = state.copyWith(leftPanelWidth: nextWidth);
+  }
+
   void updateLastEncryptionKeyInput(String input) {
     if (state.lastEncryptionKeyInput == input) {
       return;
     }
     state = state.copyWith(lastEncryptionKeyInput: input);
+  }
+
+  void updateClassSearchQuery(String input) {
+    if (state.classSearchQuery == input) {
+      return;
+    }
+    state = state.copyWith(classSearchQuery: input);
   }
 
   Future<void> openRealmFile(
@@ -245,20 +277,22 @@ class HomeNotifier extends Notifier<HomeState> {
           )
           ?.name;
 
-      final List<Map<String, dynamic>> loaded = initialClassName == null
-          ? const <Map<String, dynamic>>[]
-          : _repository.readClassDocuments(initialClassName);
-
       state = state.copyWith(
         classes: classes,
-        documents: loaded,
+        documents: const <Map<String, dynamic>>[],
         query: '',
+        classSearchQuery: '',
         pageStart: 0,
         selectedIndex: 0,
         loadError: null,
         dataSourceLabel: _fileNameFromPath(filePath),
         openedSchemaName: initialClassName,
       );
+
+      if (initialClassName != null) {
+        final int token = ++_activeLoadToken;
+        await _loadClassPage(initialClassName, pageStart: 0, token: token);
+      }
     } catch (e) {
       state = state.copyWith(
         loadError: 'Open failed: schema mismatch or unsupported file.\n$e',
@@ -266,23 +300,70 @@ class HomeNotifier extends Notifier<HomeState> {
     }
   }
 
-  void selectClass(String className) {
+  Future<void> selectClass(String className) async {
     try {
-      final List<Map<String, dynamic>> loaded = _repository.readClassDocuments(
-        className,
-      );
-
       state = state.copyWith(
-        documents: loaded,
+        documents: const <Map<String, dynamic>>[],
         pageStart: 0,
         selectedIndex: 0,
         query: '',
+        classSearchQuery: state.classSearchQuery,
         openedSchemaName: className,
         loadError: null,
       );
+
+      final int token = ++_activeLoadToken;
+      await _loadClassPage(className, pageStart: 0, token: token);
     } catch (e) {
       state = state.copyWith(loadError: 'Read class failed: $className\n$e');
     }
+  }
+
+  Future<void> _loadClassPage(
+    String className, {
+    required int pageStart,
+    required int token,
+  }) async {
+    if (token != _activeLoadToken) {
+      return;
+    }
+
+    final Stopwatch watch = Stopwatch()..start();
+    final List<Map<String, dynamic>> loaded = _repository.readClassDocuments(
+      className,
+      offset: pageStart,
+      limit: HomeState.pageSize,
+    );
+    watch.stop();
+
+    if (token != _activeLoadToken) {
+      return;
+    }
+
+    state = state.copyWith(
+      documents: List<Map<String, dynamic>>.unmodifiable(loaded),
+      pageStart: pageStart,
+      selectedIndex: 0,
+      query: '',
+      openedSchemaName: className,
+      loadError: null,
+    );
+
+    debugPrint(
+      '[HomeNotifier] class=$className pageStart=$pageStart '
+      'loaded=${loaded.length} '
+      'expected=${_classCountByName(className)} '
+      'elapsed=${watch.elapsedMilliseconds}ms',
+    );
+  }
+
+  int _classCountByName(String className) {
+    for (final RealmClassSummary summary in state.classes) {
+      if (summary.name == className) {
+        return summary.count;
+      }
+    }
+    return -1;
   }
 
   void runQuery(String query) {
@@ -298,10 +379,14 @@ class HomeNotifier extends Notifier<HomeState> {
       return;
     }
 
-    state = state.copyWith(
-      pageStart: state.normalizedPageStart - HomeState.pageSize,
-      selectedIndex: 0,
-    );
+    final String? className = state.openedSchemaName;
+    if (className == null) {
+      return;
+    }
+
+    final int targetStart = state.normalizedPageStart - HomeState.pageSize;
+    final int token = ++_activeLoadToken;
+    _loadClassPage(className, pageStart: targetStart, token: token);
   }
 
   void goNextPage() {
@@ -309,10 +394,14 @@ class HomeNotifier extends Notifier<HomeState> {
       return;
     }
 
-    state = state.copyWith(
-      pageStart: state.normalizedPageStart + HomeState.pageSize,
-      selectedIndex: 0,
-    );
+    final String? className = state.openedSchemaName;
+    if (className == null) {
+      return;
+    }
+
+    final int targetStart = state.normalizedPageStart + HomeState.pageSize;
+    final int token = ++_activeLoadToken;
+    _loadClassPage(className, pageStart: targetStart, token: token);
   }
 }
 

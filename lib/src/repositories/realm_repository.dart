@@ -197,15 +197,28 @@ class RealmUserRepository {
     }
   }
 
-  List<Map<String, dynamic>> readClassDocuments(String className) {
+  List<Map<String, dynamic>> readClassDocuments(
+    String className, {
+    int offset = 0,
+    int? limit,
+  }) {
     final Realm? realm = _realm;
     if (realm == null) {
       throw Exception('No realm file is currently opened.');
     }
 
+    if (offset < 0) {
+      offset = 0;
+    }
+
     _openedSchemaName = className;
     final RealmResults<RealmObject> rows = realm.dynamic.all(className);
-    return rows
+    Iterable<RealmObject> segment = rows.skip(offset);
+    if (limit != null && limit > 0) {
+      segment = segment.take(limit);
+    }
+
+    return segment
         .map((RealmObject object) => _toMap(object))
         .toList(growable: false);
   }
