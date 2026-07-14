@@ -3,10 +3,38 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:realm_gony3t/realm_gony3t.dart';
 import 'package:realm_gony3t/router.dart';
+import 'package:window_manager/window_manager.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _configureDesktopStartupWindow();
   _installMacOsKeyboardAssertionWorkaround();
   runApp(const ProviderScope(child: MyApp()));
+}
+
+Future<void> _configureDesktopStartupWindow() async {
+  if (kIsWeb) {
+    return;
+  }
+
+  if (defaultTargetPlatform != TargetPlatform.macOS &&
+      defaultTargetPlatform != TargetPlatform.windows &&
+      defaultTargetPlatform != TargetPlatform.linux) {
+    return;
+  }
+
+  await windowManager.ensureInitialized();
+
+  const WindowOptions windowOptions = WindowOptions(
+    center: true,
+    titleBarStyle: TitleBarStyle.normal,
+  );
+
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+    await windowManager.setFullScreen(true);
+  });
 }
 
 void _installMacOsKeyboardAssertionWorkaround() {
