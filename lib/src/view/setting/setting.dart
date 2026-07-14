@@ -67,6 +67,24 @@ class SettingPage extends ConsumerWidget {
           ),
         ],
       ),
+      bottomNavigationBar: const SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Gony3T v0.1.0+1', style: TextStyle(fontSize: 12)),
+              SizedBox(height: 4),
+              Text(
+                '© 2026 Gony3T. All rights reserved. by Natthanon Khamchun',
+                style: TextStyle(fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
