@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final NotifierProvider<InspectorTreeExpansionNotifier, Map<String, bool>>
@@ -302,6 +303,10 @@ class HomeJsonView extends ConsumerWidget {
     final AsyncValue<String> prettyJsonAsync = ref.watch(
       _jsonPrettyProvider(_JsonRenderRequest(documents: documents)),
     );
+    final String? renderedJson = prettyJsonAsync.maybeWhen(
+      data: (String data) => data,
+      orElse: () => null,
+    );
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -347,6 +352,40 @@ class HomeJsonView extends ConsumerWidget {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: renderedJson == null
+                          ? null
+                          : () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: renderedJson),
+                              );
+                              if (!context.mounted) {
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('JSON copied to clipboard'),
+                                  duration: Duration(milliseconds: 1200),
+                                ),
+                              );
+                            },
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.copy_rounded, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
                 Expanded(
                   child: prettyJsonAsync.when(
                     data: (String data) {
