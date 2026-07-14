@@ -22,6 +22,7 @@ class HomeState {
     required this.leftPanelWidth,
     required this.lastEncryptionKeyInput,
     required this.isLoadingData,
+    required this.queryValidationError,
     this.openedSchemaName,
     this.loadError,
   });
@@ -55,6 +56,7 @@ class HomeState {
       leftPanelWidth: 310,
       lastEncryptionKeyInput: '',
       isLoadingData: false,
+      queryValidationError: null,
       openedSchemaName: null,
       loadError: null,
     );
@@ -76,6 +78,7 @@ class HomeState {
   final double leftPanelWidth;
   final String lastEncryptionKeyInput;
   final bool isLoadingData;
+  final String? queryValidationError;
 
   HomeState copyWith({
     List<Map<String, dynamic>>? documents,
@@ -92,6 +95,7 @@ class HomeState {
     double? leftPanelWidth,
     String? lastEncryptionKeyInput,
     bool? isLoadingData,
+    Object? queryValidationError = _noChange,
   }) {
     return HomeState(
       documents: documents ?? this.documents,
@@ -111,6 +115,9 @@ class HomeState {
       lastEncryptionKeyInput:
           lastEncryptionKeyInput ?? this.lastEncryptionKeyInput,
       isLoadingData: isLoadingData ?? this.isLoadingData,
+      queryValidationError: identical(queryValidationError, _noChange)
+          ? this.queryValidationError
+          : queryValidationError as String?,
     );
   }
 
@@ -149,21 +156,23 @@ class HomeState {
   }
 
   List<Map<String, dynamic>> get filteredDocuments {
-    final String input = query.trim().toLowerCase();
+    final String input = query.trim();
     if (input.isEmpty) {
       return documents;
     }
 
     return documents
         .where((Map<String, dynamic> doc) {
-          final String haystack = _safeJsonEncode(doc).toLowerCase();
-          return haystack.contains(input);
+          return _matchesQueryExpression(doc, input);
         })
         .toList(growable: false);
   }
 
   int get normalizedPageStart {
-    final int total = selectedClassSummary?.count ?? documents.length;
+    final bool isQueryMode = query.trim().isNotEmpty;
+    final int total = isQueryMode
+        ? filteredDocuments.length
+        : (selectedClassSummary?.count ?? documents.length);
     if (total <= 0) {
       return 0;
     }
@@ -180,13 +189,23 @@ class HomeState {
   }
 
   List<Map<String, dynamic>> get pagedDocuments {
-    return filteredDocuments;
+    final List<Map<String, dynamic>> filtered = filteredDocuments;
+    if (filtered.isEmpty) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    final int start = normalizedPageStart.clamp(0, filtered.length);
+    final int end = (start + pageSize).clamp(0, filtered.length);
+    return filtered.sublist(start, end);
   }
 
   bool get canPrevPage => normalizedPageStart > 0;
 
   bool get canNextPage {
-    final int total = selectedClassSummary?.count ?? documents.length;
+    final bool isQueryMode = query.trim().isNotEmpty;
+    final int total = isQueryMode
+        ? filteredDocuments.length
+        : (selectedClassSummary?.count ?? documents.length);
     if (total <= 0) {
       return false;
     }
@@ -204,6 +223,16 @@ class HomeState {
   }
 
   String get displayRangeLabel {
+    if (query.trim().isNotEmpty) {
+      final int total = filteredDocuments.length;
+      if (total <= 0) {
+        return 'Query results: 0';
+      }
+      final int start = normalizedPageStart + 1;
+      final int end = normalizedPageStart + pagedDocuments.length;
+      return 'Query $start - $end of $total';
+    }
+
     final List<Map<String, dynamic>> docs = documents;
     if (docs.isEmpty) {
       return 'Display 0 - 0';
@@ -297,6 +326,7 @@ class HomeNotifier extends Notifier<HomeState> {
         classes: classes,
         documents: const <Map<String, dynamic>>[],
         query: '',
+        queryValidationError: null,
         classSearchQuery: '',
         loadDepth: defaultLoadDepth,
         pageStart: 0,
@@ -327,6 +357,7 @@ class HomeNotifier extends Notifier<HomeState> {
         pageStart: 0,
         selectedIndex: 0,
         query: '',
+        queryValidationError: null,
         classSearchQuery: state.classSearchQuery,
         loadDepth: defaultLoadDepth,
         openedSchemaName: className,
@@ -375,6 +406,7 @@ class HomeNotifier extends Notifier<HomeState> {
         pageStart: pageStart,
         selectedIndex: 0,
         query: '',
+        queryValidationError: null,
         openedSchemaName: className,
         loadError: null,
         isLoadingData: false,
@@ -429,15 +461,113 @@ class HomeNotifier extends Notifier<HomeState> {
   }
 
   void runQuery(String query) {
-    state = state.copyWith(query: query, pageStart: 0, selectedIndex: 0);
+    final String normalized = query.trim();
+    if (normalized.isEmpty) {
+      state = state.copyWith(
+        query: '',
+        queryValidationError: null,
+        pageStart: 0,
+        selectedIndex: 0,
+      );
+      return;
+    }
+
+    final String? validationError = _validateQuerySyntax(normalized);
+    if (validationError != null) {
+      state = state.copyWith(
+        queryValidationError: validationError,
+        pageStart: 0,
+        selectedIndex: 0,
+      );
+      return;
+    }
+
+    _runQueryAcrossAllDocuments(normalized);
+  }
+
+  void _runQueryAcrossAllDocuments(String normalized) {
+    final String? className = state.openedSchemaName;
+    if (className == null) {
+      state = state.copyWith(
+        query: normalized,
+        queryValidationError: null,
+        pageStart: 0,
+        selectedIndex: 0,
+      );
+      return;
+    }
+
+    final int token = ++_activeLoadToken;
+    state = state.copyWith(
+      query: normalized,
+      queryValidationError: null,
+      pageStart: 0,
+      selectedIndex: 0,
+      isLoadingData: true,
+    );
+
+    Future<void>(() async {
+      final Stopwatch watch = Stopwatch()..start();
+
+      try {
+        final List<Map<String, dynamic>> loaded = _repository
+            .readClassDocuments(
+              className,
+              offset: 0,
+              limit: null,
+              maxDepth: state.loadDepth == fullLoadDepth
+                  ? null
+                  : state.loadDepth,
+            );
+        watch.stop();
+
+        if (token != _activeLoadToken) {
+          return;
+        }
+
+        state = state.copyWith(
+          documents: List<Map<String, dynamic>>.unmodifiable(loaded),
+          pageStart: 0,
+          selectedIndex: 0,
+          openedSchemaName: className,
+          loadError: null,
+          isLoadingData: false,
+        );
+
+        debugPrint(
+          '[HomeNotifier][query] class=$className loadedAll=${loaded.length} '
+          'query="$normalized" elapsed=${watch.elapsedMilliseconds}ms',
+        );
+      } catch (e) {
+        if (token != _activeLoadToken) {
+          return;
+        }
+
+        state = state.copyWith(
+          loadError: 'Query failed: $className\n$e',
+          isLoadingData: false,
+        );
+      }
+    });
   }
 
   void clearQuery() {
-    state = state.copyWith(query: '', pageStart: 0, selectedIndex: 0);
+    state = state.copyWith(
+      query: '',
+      queryValidationError: null,
+      pageStart: 0,
+      selectedIndex: 0,
+    );
   }
 
   void goPrevPage() {
     if (!state.canPrevPage) {
+      return;
+    }
+
+    if (state.query.trim().isNotEmpty) {
+      final int targetStart = state.normalizedPageStart - HomeState.pageSize;
+      state = state.copyWith(pageStart: targetStart, selectedIndex: 0);
       return;
     }
 
@@ -453,6 +583,12 @@ class HomeNotifier extends Notifier<HomeState> {
 
   void goNextPage() {
     if (!state.canNextPage) {
+      return;
+    }
+
+    if (state.query.trim().isNotEmpty) {
+      final int targetStart = state.normalizedPageStart + HomeState.pageSize;
+      state = state.copyWith(pageStart: targetStart, selectedIndex: 0);
       return;
     }
 
@@ -505,4 +641,291 @@ Object? _toJsonSafe(Object? value) {
   }
 
   return value.toString();
+}
+
+bool _matchesQueryExpression(Map<String, dynamic> doc, String input) {
+  try {
+    final List<_QueryToken> tokens = _tokenizeQuery(input);
+    final _QueryParser parser = _QueryParser(
+      tokens: tokens,
+      evaluateClause: (String clause) => _matchesClause(doc, clause),
+    );
+    return parser.parse();
+  } on _QuerySyntaxException {
+    return false;
+  }
+}
+
+String? _validateQuerySyntax(String input) {
+  try {
+    final List<_QueryToken> tokens = _tokenizeQuery(input);
+    final _QueryParser parser = _QueryParser(
+      tokens: tokens,
+      evaluateClause: (String _) => true,
+    );
+    parser.parse();
+    return null;
+  } on _QuerySyntaxException catch (e) {
+    return e.message;
+  }
+}
+
+bool _matchesClause(Map<String, dynamic> doc, String clause) {
+  final Match? match = RegExp(
+    r'^([A-Za-z0-9_.$\[\]-]+)\s*(==|=|!=|>=|<=|>|<|:)\s*(.+)$',
+  ).firstMatch(clause);
+
+  if (match == null) {
+    final String haystack = _safeJsonEncode(doc).toLowerCase();
+    return haystack.contains(clause.toLowerCase());
+  }
+
+  final String path = match.group(1)!.trim();
+  final String op = match.group(2)!.trim();
+  final String rawExpected = _stripQueryQuotes(match.group(3)!.trim());
+  final dynamic actual = _readQueryPath(doc, path);
+
+  return _matchesQueryOperator(actual, op, rawExpected);
+}
+
+dynamic _readQueryPath(Map<String, dynamic> doc, String path) {
+  final List<String> parts = path.split('.');
+  dynamic current = doc;
+
+  for (final String part in parts) {
+    if (current is Map<String, dynamic>) {
+      current = current[part];
+      continue;
+    }
+
+    return null;
+  }
+
+  return current;
+}
+
+bool _matchesQueryOperator(dynamic actual, String op, String rawExpected) {
+  final String expectedLower = rawExpected.toLowerCase();
+  final String actualText = (actual ?? 'null').toString();
+  final String actualLower = actualText.toLowerCase();
+
+  switch (op) {
+    case ':':
+      return actualLower.contains(expectedLower);
+    case '=':
+    case '==':
+      return actualLower == expectedLower;
+    case '!=':
+      return actualLower != expectedLower;
+    case '>':
+    case '>=':
+    case '<':
+    case '<=':
+      final num? left = _toNum(actual);
+      final num? right = num.tryParse(rawExpected);
+      if (left == null || right == null) {
+        return false;
+      }
+      if (op == '>') {
+        return left > right;
+      }
+      if (op == '>=') {
+        return left >= right;
+      }
+      if (op == '<') {
+        return left < right;
+      }
+      return left <= right;
+    default:
+      return false;
+  }
+}
+
+num? _toNum(dynamic value) {
+  if (value is num) {
+    return value;
+  }
+  if (value == null) {
+    return null;
+  }
+  return num.tryParse(value.toString());
+}
+
+String _stripQueryQuotes(String input) {
+  if (input.length >= 2 &&
+      ((input.startsWith('"') && input.endsWith('"')) ||
+          (input.startsWith("'") && input.endsWith("'")))) {
+    return input.substring(1, input.length - 1);
+  }
+  return input;
+}
+
+class _QuerySyntaxException implements Exception {
+  const _QuerySyntaxException(this.message);
+
+  final String message;
+}
+
+enum _QueryTokenType { lParen, rParen, and, or, clause }
+
+class _QueryToken {
+  const _QueryToken(this.type, this.text);
+
+  final _QueryTokenType type;
+  final String text;
+}
+
+List<_QueryToken> _tokenizeQuery(String input) {
+  final List<_QueryToken> tokens = <_QueryToken>[];
+  final StringBuffer buffer = StringBuffer();
+  bool inQuote = false;
+  String quoteChar = '';
+
+  void flushClause() {
+    final String clause = buffer.toString().trim();
+    buffer.clear();
+    if (clause.isNotEmpty) {
+      tokens.add(_QueryToken(_QueryTokenType.clause, clause));
+    }
+  }
+
+  for (int i = 0; i < input.length; i++) {
+    final String ch = input[i];
+
+    if (inQuote) {
+      buffer.write(ch);
+      if (ch == quoteChar) {
+        inQuote = false;
+      }
+      continue;
+    }
+
+    if (ch == '"' || ch == "'") {
+      inQuote = true;
+      quoteChar = ch;
+      buffer.write(ch);
+      continue;
+    }
+
+    if (ch == '(') {
+      flushClause();
+      tokens.add(const _QueryToken(_QueryTokenType.lParen, '('));
+      continue;
+    }
+
+    if (ch == ')') {
+      flushClause();
+      tokens.add(const _QueryToken(_QueryTokenType.rParen, ')'));
+      continue;
+    }
+
+    if (ch == '&' && i + 1 < input.length && input[i + 1] == '&') {
+      flushClause();
+      tokens.add(const _QueryToken(_QueryTokenType.and, '&&'));
+      i++;
+      continue;
+    }
+
+    if (ch == '|' && i + 1 < input.length && input[i + 1] == '|') {
+      flushClause();
+      tokens.add(const _QueryToken(_QueryTokenType.or, '||'));
+      i++;
+      continue;
+    }
+
+    buffer.write(ch);
+  }
+
+  if (inQuote) {
+    throw const _QuerySyntaxException(
+      'Query syntax error: missing closing quote',
+    );
+  }
+
+  flushClause();
+
+  if (tokens.isEmpty) {
+    throw const _QuerySyntaxException('Query syntax error: empty expression');
+  }
+
+  return tokens;
+}
+
+class _QueryParser {
+  _QueryParser({required this.tokens, required this.evaluateClause});
+
+  final List<_QueryToken> tokens;
+  final bool Function(String clause) evaluateClause;
+  int _index = 0;
+
+  bool parse() {
+    final bool result = _parseOrExpression();
+    if (_index != tokens.length) {
+      throw const _QuerySyntaxException(
+        'Query syntax error: unexpected token at end of expression',
+      );
+    }
+    return result;
+  }
+
+  bool _parseOrExpression() {
+    bool left = _parseAndExpression();
+    while (_match(_QueryTokenType.or)) {
+      left = left || _parseAndExpression();
+    }
+    return left;
+  }
+
+  bool _parseAndExpression() {
+    bool left = _parsePrimary();
+    while (_match(_QueryTokenType.and)) {
+      left = left && _parsePrimary();
+    }
+    return left;
+  }
+
+  bool _parsePrimary() {
+    if (_match(_QueryTokenType.lParen)) {
+      final bool inner = _parseOrExpression();
+      if (!_match(_QueryTokenType.rParen)) {
+        throw const _QuerySyntaxException(
+          'Query syntax error: missing closing parenthesis',
+        );
+      }
+      return inner;
+    }
+
+    final _QueryToken? token = _consume(_QueryTokenType.clause);
+    if (token == null) {
+      throw const _QuerySyntaxException(
+        'Query syntax error: expected condition',
+      );
+    }
+    return evaluateClause(token.text);
+  }
+
+  bool _match(_QueryTokenType type) {
+    final _QueryToken? token = _peek();
+    if (token == null || token.type != type) {
+      return false;
+    }
+    _index++;
+    return true;
+  }
+
+  _QueryToken? _consume(_QueryTokenType type) {
+    final _QueryToken? token = _peek();
+    if (token == null || token.type != type) {
+      return null;
+    }
+    _index++;
+    return token;
+  }
+
+  _QueryToken? _peek() {
+    if (_index >= tokens.length) {
+      return null;
+    }
+    return tokens[_index];
+  }
 }

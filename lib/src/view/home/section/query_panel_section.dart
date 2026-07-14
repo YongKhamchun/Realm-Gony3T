@@ -10,6 +10,8 @@ class HomeQueryPanel extends StatefulWidget {
     required this.onOpenSettings,
     required this.dataSourceLabel,
     required this.loadError,
+    required this.queryValidationError,
+    required this.isQueryRunning,
   });
 
   final TextEditingController controller;
@@ -19,6 +21,8 @@ class HomeQueryPanel extends StatefulWidget {
   final VoidCallback onOpenSettings;
   final String dataSourceLabel;
   final String? loadError;
+  final String? queryValidationError;
+  final bool isQueryRunning;
 
   @override
   State<HomeQueryPanel> createState() => _HomeQueryPanelState();
@@ -76,30 +80,52 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
               Expanded(
                 child: TextField(
                   controller: widget.controller,
+                  enabled: !widget.isQueryRunning,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(12)),
                     ),
-                    hintText: 'Try: active, Bangkok, u001',
-                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Try: name:alice && age>=30 && status=active',
+                    prefixIcon: Icon(Icons.query_stats),
                   ),
                   onSubmitted: (_) => widget.onRunQuery(),
                 ),
               ),
               const SizedBox(width: 12),
               FilledButton.icon(
-                onPressed: widget.onRunQuery,
+                onPressed: widget.isQueryRunning ? null : widget.onRunQuery,
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Run'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed: widget.onClearQuery,
+                onPressed: widget.isQueryRunning ? null : widget.onClearQuery,
                 icon: const Icon(Icons.clear),
                 label: const Text('Clear'),
               ),
             ],
           ),
+          if (widget.isQueryRunning) ...<Widget>[
+            const SizedBox(height: 8),
+            Row(
+              children: const <Widget>[
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Running query on full dataset...'),
+              ],
+            ),
+          ],
+          if (widget.queryValidationError != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              widget.queryValidationError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
         ],
       ),
     );

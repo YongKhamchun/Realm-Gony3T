@@ -193,6 +193,9 @@ class _HomePageState extends ConsumerState<HomePage> {
               },
               dataSourceLabel: state.dataSourceLabel,
               loadError: state.loadError,
+              queryValidationError: state.queryValidationError,
+              isQueryRunning:
+                  state.isLoadingData && state.query.trim().isNotEmpty,
             ),
           ),
           const Divider(height: 1),
