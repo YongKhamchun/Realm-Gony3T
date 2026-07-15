@@ -720,6 +720,23 @@ class HomeNotifier extends Notifier<HomeState> {
 
     final _QueryTabSnapshot? snapshot = _queryTabSnapshots[tabId];
     if (snapshot != null) {
+      final bool sameDocuments = identical(state.documents, snapshot.documents);
+      final bool sameQuery = state.query == snapshot.query;
+      final bool samePageStart = state.pageStart == snapshot.pageStart;
+      final bool sameSelectedIndex =
+          state.selectedIndex == snapshot.selectedIndex;
+      final bool sameValidationError =
+          state.queryValidationError == snapshot.queryValidationError;
+
+      if (sameDocuments &&
+          sameQuery &&
+          samePageStart &&
+          sameSelectedIndex &&
+          sameValidationError &&
+          !(state.isLoadingData)) {
+        return;
+      }
+
       state = state.copyWith(
         documents: snapshot.documents,
         query: snapshot.query,
@@ -922,8 +939,18 @@ class HomeNotifier extends Notifier<HomeState> {
   }
 
   void _saveSnapshotForTab(int tabId) {
+    final _QueryTabSnapshot? previous = _queryTabSnapshots[tabId];
+    if (previous != null &&
+        identical(previous.documents, state.documents) &&
+        previous.query == state.query &&
+        previous.pageStart == state.pageStart &&
+        previous.selectedIndex == state.selectedIndex &&
+        previous.queryValidationError == state.queryValidationError) {
+      return;
+    }
+
     _queryTabSnapshots[tabId] = _QueryTabSnapshot(
-      documents: List<Map<String, dynamic>>.unmodifiable(state.documents),
+      documents: state.documents,
       query: state.query,
       pageStart: state.pageStart,
       selectedIndex: state.selectedIndex,
