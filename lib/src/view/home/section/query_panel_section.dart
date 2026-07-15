@@ -55,6 +55,7 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
                 onPressed: widget.onOpenFile,
                 icon: const Icon(Icons.folder_open),
               ),
+              const SizedBox(width: 16),
               IconButton(
                 tooltip: 'Settings',
                 onPressed: widget.onOpenSettings,

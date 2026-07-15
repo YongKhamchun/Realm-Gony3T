@@ -69,7 +69,8 @@ class MyApp extends ConsumerWidget {
     final ThemeMode themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
-      title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
+      title: 'Realm Gony3T',
       themeMode: themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
