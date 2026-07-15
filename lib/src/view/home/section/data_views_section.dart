@@ -641,26 +641,28 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
           ),
         ),
         Expanded(
-          child: CustomScrollView(
-            physics: const ClampingScrollPhysics(),
-            slivers: <Widget>[
-              SliverList(
-                delegate: SliverChildBuilderDelegate((
-                  BuildContext context,
-                  int index,
-                ) {
-                  final Map<String, dynamic> doc = widget.documents[index];
-                  final String key = '#$index';
-                  return HomeInspectorNodeTile(
-                    key: ValueKey<String>(key),
-                    keyLabel: key,
-                    value: doc,
-                    depth: 0,
-                    nodePath: key,
-                  );
-                }, childCount: widget.documents.length),
-              ),
-            ],
+          child: SelectionArea(
+            child: CustomScrollView(
+              physics: const ClampingScrollPhysics(),
+              slivers: <Widget>[
+                SliverList(
+                  delegate: SliverChildBuilderDelegate((
+                    BuildContext context,
+                    int index,
+                  ) {
+                    final Map<String, dynamic> doc = widget.documents[index];
+                    final String key = '#$index';
+                    return HomeInspectorNodeTile(
+                      key: ValueKey<String>(key),
+                      keyLabel: key,
+                      value: doc,
+                      depth: 0,
+                      nodePath: key,
+                    );
+                  }, childCount: widget.documents.length),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -755,8 +757,17 @@ class HomeInspectorNodeTile extends ConsumerWidget {
       },
       title: Row(
         children: <Widget>[
-          SizedBox(width: 150, child: Text(keyLabel)),
-          Expanded(child: Text(displayValue(value))),
+          SizedBox(
+            width: 150,
+            child: Text(keyLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          Expanded(
+            child: Text(
+              displayValue(value),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           SizedBox(width: 90, child: Text(valueType(value))),
         ],
       ),
@@ -835,7 +846,10 @@ class HomeInspectorRow extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(12 + depth * 14, 8, 8, 8),
       child: Row(
         children: <Widget>[
-          SizedBox(width: 150, child: Text(keyLabel)),
+          SizedBox(
+            width: 150,
+            child: Text(keyLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
           Expanded(child: Text(valueLabel)),
           SizedBox(width: 90, child: Text(typeLabel)),
         ],
@@ -877,10 +891,6 @@ String displayValue(dynamic value) {
     return 'null';
   }
   return '$value';
-}
-
-String safeJsonEncode(Object? value) {
-  return jsonEncode(toJsonSafe(value));
 }
 
 Object? toJsonSafe(Object? value) {
