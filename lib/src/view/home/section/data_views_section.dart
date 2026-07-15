@@ -124,15 +124,6 @@ class HomeDataViewsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final int activeTabIndex = ref.watch(_dataViewTabIndexProvider);
     final Set<int> loadedTabs = ref.watch(_loadedDataTabsProvider);
-    final int currentDepthIndex = depthOptions.indexOf(currentDepth);
-    final bool canIncreaseDepth =
-        currentDepthIndex >= 0 && currentDepthIndex < depthOptions.length - 1;
-    final int nextDepth = canIncreaseDepth
-        ? depthOptions[currentDepthIndex + 1]
-        : currentDepth;
-    final String depthLabel = currentDepth < 0
-        ? 'Depth Full'
-        : 'Depth $currentDepth';
 
     return DefaultTabController(
       initialIndex: 1,
@@ -157,31 +148,36 @@ class HomeDataViewsPanel extends ConsumerWidget {
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(depthLabel),
-                            const SizedBox(width: 6),
-                            SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                iconSize: 14,
-                                visualDensity: VisualDensity.compact,
-                                tooltip: 'Increase depth',
-                                onPressed: isLoading || !canIncreaseDepth
-                                    ? null
-                                    : () => onSelectDepth(nextDepth),
-                                icon: const Icon(Icons.add),
-                              ),
+                      child: SizedBox(
+                        height: 30,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              value: currentDepth,
+                              isDense: true,
+                              onChanged: isLoading
+                                  ? null
+                                  : (int? value) {
+                                      if (value == null) {
+                                        return;
+                                      }
+                                      onSelectDepth(value);
+                                    },
+                              items: depthOptions
+                                  .map(
+                                    (int depth) => DropdownMenuItem<int>(
+                                      value: depth,
+                                      child: Text(
+                                        depth < 0
+                                            ? 'Depth Full'
+                                            : 'Depth $depth',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(growable: false),
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),

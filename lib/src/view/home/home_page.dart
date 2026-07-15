@@ -272,7 +272,13 @@ class _HomePageState extends ConsumerState<HomePage> {
                             displayRangeLabel: state.displayRangeLabel,
                             currentDepth: state.loadDepth,
                             isLoading: state.isLoadingData,
-                            depthOptions: const <int>[3, 5, 7, 10],
+                            depthOptions: const <int>[
+                              3,
+                              5,
+                              7,
+                              10,
+                              HomeNotifier.fullLoadDepth,
+                            ],
                             onSelectDepth:
                                 notifier.setDepthAndReloadCurrentPage,
                             canPrev: state.canPrevPage,
