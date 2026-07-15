@@ -261,7 +261,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         .exportClassFullDepthToJson(
           className: className,
           outputPath: outputPath.trim(),
-          prettyJson: true,
+          prettyJson: false,
         );
   }
 

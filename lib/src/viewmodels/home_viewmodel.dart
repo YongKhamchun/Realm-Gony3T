@@ -562,7 +562,7 @@ class HomeNotifier extends Notifier<HomeState> {
   Future<void> exportClassFullDepthToJson({
     required String className,
     required String outputPath,
-    bool prettyJson = true,
+    bool prettyJson = false,
   }) async {
     if (state.isExportingClassJson ?? false) {
       return;
