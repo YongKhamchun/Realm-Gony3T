@@ -429,7 +429,7 @@ class HomeJsonView extends ConsumerWidget {
   }
 }
 
-class HomeTableView extends StatelessWidget {
+class HomeTableView extends StatefulWidget {
   const HomeTableView({
     super.key,
     required this.documents,
@@ -440,7 +440,21 @@ class HomeTableView extends StatelessWidget {
   final List<String> columns;
 
   @override
+  State<HomeTableView> createState() => _HomeTableViewState();
+}
+
+class _HomeTableViewState extends State<HomeTableView> {
+  static const double _minColumnWidth = 120;
+  static const double _maxColumnWidth = 720;
+
+  final List<double> _columnWidths = <double>[];
+  String _activeColumnsKey = '';
+
+  @override
   Widget build(BuildContext context) {
+    final List<Map<String, dynamic>> documents = widget.documents;
+    final List<String> columns = widget.columns;
+
     if (documents.isEmpty) {
       return const Center(child: Text('No data found for this query'));
     }
@@ -450,12 +464,15 @@ class HomeTableView extends StatelessWidget {
               .where((String key) => key != '_id')
               .toList(growable: false)
         : columns;
-    const double cellWidth = 170;
+
+    _ensureColumnWidths(effectiveColumns, documents);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double tableWidth = (effectiveColumns.length * cellWidth)
-            .toDouble();
+        final double tableWidth = _columnWidths.fold<double>(
+          0,
+          (double sum, double width) => sum + width,
+        );
         final double minWidth = constraints.maxWidth;
 
         return CustomScrollView(
@@ -467,23 +484,30 @@ class HomeTableView extends StatelessWidget {
               sliver: SliverToBoxAdapter(
                 child: SizedBox(
                   width: tableWidth < minWidth ? minWidth : tableWidth,
-                  child: CustomScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    slivers: <Widget>[
-                      SliverToBoxAdapter(
-                        child: _TableHeaderRow(columns: effectiveColumns),
-                      ),
-                      SliverList.builder(
-                        itemCount: documents.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          return _TableDataRow(
-                            rowIndex: index,
+                  child: SelectionArea(
+                    child: CustomScrollView(
+                      physics: const ClampingScrollPhysics(),
+                      slivers: <Widget>[
+                        SliverToBoxAdapter(
+                          child: _TableHeaderRow(
                             columns: effectiveColumns,
-                            document: documents[index],
-                          );
-                        },
-                      ),
-                    ],
+                            columnWidths: _columnWidths,
+                            onResizeColumn: _resizeColumn,
+                          ),
+                        ),
+                        SliverList.builder(
+                          itemCount: documents.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            return _TableDataRow(
+                              rowIndex: index,
+                              columns: effectiveColumns,
+                              columnWidths: _columnWidths,
+                              document: documents[index],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -493,12 +517,65 @@ class HomeTableView extends StatelessWidget {
       },
     );
   }
+
+  void _ensureColumnWidths(
+    List<String> effectiveColumns,
+    List<Map<String, dynamic>> rows,
+  ) {
+    final String columnsKey = effectiveColumns.join('|');
+    if (_activeColumnsKey == columnsKey &&
+        _columnWidths.length == effectiveColumns.length) {
+      return;
+    }
+
+    _activeColumnsKey = columnsKey;
+    _columnWidths
+      ..clear()
+      ..addAll(
+        effectiveColumns.map(
+          (String column) => _estimateColumnWidth(column, rows),
+        ),
+      );
+  }
+
+  void _resizeColumn(int index, double deltaX) {
+    if (index < 0 || index >= _columnWidths.length) {
+      return;
+    }
+
+    setState(() {
+      final double next = (_columnWidths[index] + deltaX).clamp(
+        _minColumnWidth,
+        _maxColumnWidth,
+      );
+      _columnWidths[index] = next;
+    });
+  }
+
+  double _estimateColumnWidth(String column, List<Map<String, dynamic>> rows) {
+    int maxChars = column.length;
+    for (final Map<String, dynamic> row in rows) {
+      final int len = displayValue(row[column]).length;
+      if (len > maxChars) {
+        maxChars = len;
+      }
+    }
+
+    final double estimated = maxChars * 7.2 + 28;
+    return estimated.clamp(170, 520).toDouble();
+  }
 }
 
 class _TableHeaderRow extends StatelessWidget {
-  const _TableHeaderRow({required this.columns});
+  const _TableHeaderRow({
+    required this.columns,
+    required this.columnWidths,
+    required this.onResizeColumn,
+  });
 
   final List<String> columns;
+  final List<double> columnWidths;
+  final void Function(int index, double deltaX) onResizeColumn;
 
   @override
   Widget build(BuildContext context) {
@@ -512,9 +589,13 @@ class _TableHeaderRow extends StatelessWidget {
         ),
       ),
       child: Row(
-        children: columns
-            .map((String key) => _TableCell(text: key, isHeader: true))
-            .toList(growable: false),
+        children: List<Widget>.generate(columns.length, (int index) {
+          return _ResizableHeaderCell(
+            text: columns[index],
+            width: columnWidths[index],
+            onResize: (double deltaX) => onResizeColumn(index, deltaX),
+          );
+        }),
       ),
     );
   }
@@ -524,11 +605,13 @@ class _TableDataRow extends StatelessWidget {
   const _TableDataRow({
     required this.rowIndex,
     required this.columns,
+    required this.columnWidths,
     required this.document,
   });
 
   final int rowIndex;
   final List<String> columns;
+  final List<double> columnWidths;
   final Map<String, dynamic> document;
 
   @override
@@ -546,33 +629,118 @@ class _TableDataRow extends StatelessWidget {
         ),
       ),
       child: Row(
-        children: columns
-            .map((String key) => _TableCell(text: displayValue(document[key])))
-            .toList(growable: false),
+        children: List<Widget>.generate(columns.length, (int index) {
+          final String key = columns[index];
+          return _TableCell(
+            text: displayValue(document[key]),
+            width: columnWidths[index],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _ResizableHeaderCell extends StatefulWidget {
+  const _ResizableHeaderCell({
+    required this.text,
+    required this.width,
+    required this.onResize,
+  });
+
+  final String text;
+  final double width;
+  final ValueChanged<double> onResize;
+
+  @override
+  State<_ResizableHeaderCell> createState() => _ResizableHeaderCellState();
+}
+
+class _ResizableHeaderCellState extends State<_ResizableHeaderCell> {
+  bool _isDragging = false;
+  double _lastDx = 0;
+
+  void _onPointerDown(PointerDownEvent event) {
+    _isDragging = true;
+    _lastDx = event.position.dx;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_isDragging) {
+      return;
+    }
+    final double delta = event.position.dx - _lastDx;
+    _lastDx = event.position.dx;
+    widget.onResize(delta);
+  }
+
+  void _stopDragging() {
+    _isDragging = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+              child: Text(
+                widget.text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+          ),
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: Listener(
+              onPointerDown: _onPointerDown,
+              onPointerMove: _onPointerMove,
+              onPointerUp: (_) => _stopDragging(),
+              onPointerCancel: (_) => _stopDragging(),
+              child: Container(
+                width: 14,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Theme.of(context).dividerColor),
+                  ),
+                ),
+                child: Icon(
+                  Icons.drag_indicator,
+                  size: 12,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _TableCell extends StatelessWidget {
-  const _TableCell({required this.text, this.isHeader = false});
+  const _TableCell({required this.text, required this.width});
 
   final String text;
-  final bool isHeader;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 170,
+      width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         child: Text(
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: isHeader
-              ? Theme.of(context).textTheme.titleSmall
-              : Theme.of(context).textTheme.bodyMedium,
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
       ),
     );
