@@ -1,6 +1,8 @@
 # Realm Gony3T
 
-<img src="assets/images/logo_gony3t.png" alt="Realm Gony3T Logo" width="180"/>
+<p align="center">
+	<img src="assets/images/logo_gony3t.png" alt="Realm Gony3T Logo" width="180" />
+</p>
 
 Realm Gony3T is a Flutter desktop app for exploring `.realm` files.
 It supports class browsing, query filtering, depth-limited object loading, and JSON export.
