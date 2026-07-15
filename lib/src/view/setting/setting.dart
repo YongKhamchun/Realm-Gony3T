@@ -74,7 +74,7 @@ class SettingPage extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Gony3T v0.1.0+1', style: TextStyle(fontSize: 12)),
+              Text('Gony3T v0.1.0+2 alpha', style: TextStyle(fontSize: 12)),
               SizedBox(height: 4),
               Text(
                 '© 2026 Gony3T. All rights reserved. by Natthanon Khamchun',
