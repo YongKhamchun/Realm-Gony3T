@@ -1,6 +1,164 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class HomeQueryPanel extends StatefulWidget {
+const int _maxQueryTabs = 12;
+
+final NotifierProvider<_QueryPanelStateNotifier, _QueryPanelState>
+_queryPanelProvider =
+    NotifierProvider<_QueryPanelStateNotifier, _QueryPanelState>(
+      _QueryPanelStateNotifier.new,
+    );
+
+class _QueryPanelState {
+  const _QueryPanelState({
+    required this.tabs,
+    required this.nextTabId,
+    required this.activeTabId,
+  });
+
+  final List<_QueryEditorTab> tabs;
+  final int nextTabId;
+  final int activeTabId;
+
+  _QueryEditorTab get activeTab {
+    return tabs.firstWhere(
+      (_QueryEditorTab tab) => tab.id == activeTabId,
+      orElse: () => tabs.first,
+    );
+  }
+
+  _QueryPanelState copyWith({
+    List<_QueryEditorTab>? tabs,
+    int? nextTabId,
+    int? activeTabId,
+  }) {
+    return _QueryPanelState(
+      tabs: tabs ?? this.tabs,
+      nextTabId: nextTabId ?? this.nextTabId,
+      activeTabId: activeTabId ?? this.activeTabId,
+    );
+  }
+}
+
+class _QueryPanelStateNotifier extends Notifier<_QueryPanelState> {
+  @override
+  _QueryPanelState build() {
+    final _QueryEditorTab initialTab = _QueryEditorTab(
+      id: 1,
+      title: 'Query 1',
+      controller: TextEditingController(),
+      lastExecutedQuery: '',
+    );
+
+    ref.onDispose(() {
+      for (final _QueryEditorTab tab in state.tabs) {
+        tab.controller.dispose();
+      }
+    });
+
+    return _QueryPanelState(
+      tabs: <_QueryEditorTab>[initialTab],
+      nextTabId: 1,
+      activeTabId: 1,
+    );
+  }
+
+  _QueryEditorTab addTab() {
+    final int nextId = state.nextTabId + 1;
+    final int nextNumber = state.tabs.length + 1;
+    final _QueryEditorTab tab = _QueryEditorTab(
+      id: nextId,
+      title: 'Query $nextNumber',
+      controller: TextEditingController(),
+      lastExecutedQuery: '',
+    );
+
+    state = state.copyWith(
+      tabs: <_QueryEditorTab>[...state.tabs, tab],
+      nextTabId: nextId,
+      activeTabId: tab.id,
+    );
+    return tab;
+  }
+
+  _QueryEditorTab? selectTab(int id) {
+    final _QueryEditorTab? tab = _findById(id);
+    if (tab == null) {
+      return null;
+    }
+    state = state.copyWith(activeTabId: id);
+    return tab;
+  }
+
+  _QueryEditorTab? closeTab(int id) {
+    if (state.tabs.length <= 1) {
+      return null;
+    }
+
+    final int closingIndex = state.tabs.indexWhere(
+      (_QueryEditorTab tab) => tab.id == id,
+    );
+    if (closingIndex == -1) {
+      return null;
+    }
+
+    final List<_QueryEditorTab> nextTabs = List<_QueryEditorTab>.of(state.tabs);
+    final _QueryEditorTab closingTab = nextTabs.removeAt(closingIndex);
+    closingTab.controller.dispose();
+
+    int nextActiveId = state.activeTabId;
+    if (state.activeTabId == id) {
+      final int nextIndex = closingIndex >= nextTabs.length
+          ? nextTabs.length - 1
+          : closingIndex;
+      nextActiveId = nextTabs[nextIndex].id;
+    }
+
+    state = state.copyWith(tabs: nextTabs, activeTabId: nextActiveId);
+    return state.activeTab;
+  }
+
+  void renameTab(int id, String normalizedTitle) {
+    final int index = state.tabs.indexWhere(
+      (_QueryEditorTab tab) => tab.id == id,
+    );
+    if (index == -1) {
+      return;
+    }
+
+    final List<_QueryEditorTab> nextTabs = List<_QueryEditorTab>.of(state.tabs);
+    nextTabs[index] = nextTabs[index].copyWith(title: normalizedTitle);
+    state = state.copyWith(tabs: nextTabs);
+  }
+
+  void setLastExecutedQuery(int id, String query) {
+    final int index = state.tabs.indexWhere(
+      (_QueryEditorTab tab) => tab.id == id,
+    );
+    if (index == -1) {
+      return;
+    }
+
+    final List<_QueryEditorTab> nextTabs = List<_QueryEditorTab>.of(state.tabs);
+    nextTabs[index] = nextTabs[index].copyWith(lastExecutedQuery: query);
+    state = state.copyWith(tabs: nextTabs);
+  }
+
+  void clearLastExecutedQuery(int id) {
+    setLastExecutedQuery(id, '');
+  }
+
+  _QueryEditorTab? _findById(int id) {
+    for (final _QueryEditorTab tab in state.tabs) {
+      if (tab.id == id) {
+        return tab;
+      }
+    }
+    return null;
+  }
+}
+
+class HomeQueryPanel extends ConsumerWidget {
   const HomeQueryPanel({
     super.key,
     required this.onRunQuery,
@@ -24,119 +182,69 @@ class HomeQueryPanel extends StatefulWidget {
   final String? queryValidationError;
   final bool isQueryRunning;
 
-  @override
-  State<HomeQueryPanel> createState() => _HomeQueryPanelState();
-}
+  void _addTab(WidgetRef ref) {
+    if (isQueryRunning) {
+      return;
+    }
 
-class _HomeQueryPanelState extends State<HomeQueryPanel> {
-  static const int _maxTabs = 12;
+    final _QueryPanelState state = ref.read(_queryPanelProvider);
+    if (state.tabs.length >= _maxQueryTabs) {
+      return;
+    }
 
-  final List<_QueryEditorTab> _tabs = <_QueryEditorTab>[];
-  int _nextTabId = 1;
-  int _activeTabId = 1;
+    final _QueryEditorTab tab = ref.read(_queryPanelProvider.notifier).addTab();
+    onActivateTabQuery(tab.id, '');
+  }
 
-  _QueryEditorTab get _activeTab {
-    return _tabs.firstWhere(
-      (_QueryEditorTab tab) => tab.id == _activeTabId,
-      orElse: () => _tabs.first,
+  void _selectTab(WidgetRef ref, int id) {
+    if (isQueryRunning) {
+      return;
+    }
+
+    final _QueryEditorTab? tab = ref
+        .read(_queryPanelProvider.notifier)
+        .selectTab(id);
+    if (tab == null) {
+      return;
+    }
+    onActivateTabQuery(tab.id, tab.lastExecutedQuery);
+  }
+
+  void _closeTab(WidgetRef ref, int id) {
+    if (isQueryRunning) {
+      return;
+    }
+
+    final _QueryPanelState state = ref.read(_queryPanelProvider);
+    if (state.tabs.length <= 1) {
+      return;
+    }
+
+    final _QueryEditorTab? active = ref
+        .read(_queryPanelProvider.notifier)
+        .closeTab(id);
+    if (active == null) {
+      return;
+    }
+    onActivateTabQuery(active.id, active.lastExecutedQuery);
+  }
+
+  Future<void> _renameTab(BuildContext context, WidgetRef ref, int id) async {
+    if (isQueryRunning) {
+      return;
+    }
+
+    final _QueryPanelState state = ref.read(_queryPanelProvider);
+    final _QueryEditorTab? tab = state.tabs.cast<_QueryEditorTab?>().firstWhere(
+      (_QueryEditorTab? t) => t?.id == id,
+      orElse: () => null,
     );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _tabs.add(
-      _QueryEditorTab(
-        id: _nextTabId,
-        title: 'Query 1',
-        controller: TextEditingController(),
-        lastExecutedQuery: '',
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    for (final _QueryEditorTab tab in _tabs) {
-      tab.controller.dispose();
-    }
-    super.dispose();
-  }
-
-  void _addTab() {
-    if (widget.isQueryRunning || _tabs.length >= _maxTabs) {
-      return;
-    }
-
-    setState(() {
-      _nextTabId += 1;
-      final int nextNumber = _tabs.length + 1;
-      final _QueryEditorTab tab = _QueryEditorTab(
-        id: _nextTabId,
-        title: 'Query $nextNumber',
-        controller: TextEditingController(),
-        lastExecutedQuery: '',
-      );
-      _tabs.add(tab);
-      _activeTabId = tab.id;
-    });
-
-    widget.onActivateTabQuery(_activeTabId, '');
-  }
-
-  void _selectTab(int id) {
-    if (widget.isQueryRunning) {
-      return;
-    }
-    setState(() {
-      _activeTabId = id;
-    });
-
-    final _QueryEditorTab tab = _tabs.firstWhere(
-      (_QueryEditorTab t) => t.id == id,
-    );
-    widget.onActivateTabQuery(tab.id, tab.lastExecutedQuery);
-  }
-
-  void _closeTab(int id) {
-    if (widget.isQueryRunning || _tabs.length <= 1) {
-      return;
-    }
-
-    final int closingIndex = _tabs.indexWhere(
-      (_QueryEditorTab tab) => tab.id == id,
-    );
-    if (closingIndex == -1) {
-      return;
-    }
-
-    setState(() {
-      final _QueryEditorTab closingTab = _tabs.removeAt(closingIndex);
-      closingTab.controller.dispose();
-
-      if (_activeTabId == id) {
-        final int nextIndex = closingIndex >= _tabs.length
-            ? _tabs.length - 1
-            : closingIndex;
-        _activeTabId = _tabs[nextIndex].id;
-      }
-    });
-
-    widget.onActivateTabQuery(_activeTab.id, _activeTab.lastExecutedQuery);
-  }
-
-  Future<void> _renameTab(int id) async {
-    if (widget.isQueryRunning) {
-      return;
-    }
-
-    final int index = _tabs.indexWhere((_QueryEditorTab tab) => tab.id == id);
-    if (index == -1) {
+    if (tab == null) {
       return;
     }
 
     final TextEditingController renameController = TextEditingController(
-      text: _tabs[index].title,
+      text: tab.title,
     );
 
     final String? newTitle = await showDialog<String>(
@@ -172,7 +280,7 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
     );
 
     renameController.dispose();
-    if (!mounted || newTitle == null) {
+    if (!context.mounted || newTitle == null) {
       return;
     }
 
@@ -181,40 +289,29 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
       return;
     }
 
-    setState(() {
-      _tabs[index] = _tabs[index].copyWith(title: normalized);
-    });
+    ref.read(_queryPanelProvider.notifier).renameTab(id, normalized);
   }
 
-  void _runActiveQuery() {
-    final String text = _activeTab.controller.text;
-    final int index = _tabs.indexWhere(
-      (_QueryEditorTab tab) => tab.id == _activeTabId,
-    );
-    if (index >= 0) {
-      setState(() {
-        _tabs[index] = _tabs[index].copyWith(lastExecutedQuery: text);
-      });
-    }
-    widget.onRunQuery(_activeTabId, text);
+  void _runActiveQuery(WidgetRef ref, _QueryPanelState state) {
+    final _QueryEditorTab activeTab = state.activeTab;
+    final String text = activeTab.controller.text;
+    ref
+        .read(_queryPanelProvider.notifier)
+        .setLastExecutedQuery(activeTab.id, text);
+    onRunQuery(activeTab.id, text);
   }
 
-  void _clearActiveQuery() {
-    final int index = _tabs.indexWhere(
-      (_QueryEditorTab tab) => tab.id == _activeTabId,
-    );
-    if (index >= 0) {
-      setState(() {
-        _tabs[index] = _tabs[index].copyWith(lastExecutedQuery: '');
-      });
-    }
-    _activeTab.controller.clear();
-    widget.onClearQuery(_activeTabId);
+  void _clearActiveQuery(WidgetRef ref, _QueryPanelState state) {
+    final _QueryEditorTab activeTab = state.activeTab;
+    ref.read(_queryPanelProvider.notifier).clearLastExecutedQuery(activeTab.id);
+    activeTab.controller.clear();
+    onClearQuery(activeTab.id);
   }
 
   @override
-  Widget build(BuildContext context) {
-    final _QueryEditorTab activeTab = _activeTab;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final _QueryPanelState panelState = ref.watch(_queryPanelProvider);
+    final _QueryEditorTab activeTab = panelState.activeTab;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -237,26 +334,26 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
               const Spacer(),
               IconButton(
                 tooltip: 'Open .realm file',
-                onPressed: widget.onOpenFile,
+                onPressed: onOpenFile,
                 icon: const Icon(Icons.folder_open),
               ),
               const SizedBox(width: 16),
               IconButton(
                 tooltip: 'Settings',
-                onPressed: widget.onOpenSettings,
+                onPressed: onOpenSettings,
                 icon: const Icon(Icons.settings),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Data source: ${widget.dataSourceLabel}',
+            'Data source: $dataSourceLabel',
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          if (widget.loadError != null) ...<Widget>[
+          if (loadError != null) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              widget.loadError!,
+              loadError!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
@@ -265,18 +362,18 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: <Widget>[
-                ..._tabs.map((_QueryEditorTab tab) {
-                  final bool isActive = tab.id == _activeTabId;
+                ...panelState.tabs.map((_QueryEditorTab tab) {
+                  final bool isActive = tab.id == panelState.activeTabId;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onLongPress: () => _renameTab(tab.id),
+                      onLongPress: () => _renameTab(context, ref, tab.id),
                       child: InputChip(
                         selected: isActive,
                         label: Text(tab.title),
-                        onSelected: (_) => _selectTab(tab.id),
-                        onDeleted: _tabs.length > 1
-                            ? () => _closeTab(tab.id)
+                        onSelected: (_) => _selectTab(ref, tab.id),
+                        onDeleted: panelState.tabs.length > 1
+                            ? () => _closeTab(ref, tab.id)
                             : null,
                       ),
                     ),
@@ -284,9 +381,10 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
                 }),
                 IconButton(
                   tooltip: 'Add query tab',
-                  onPressed: widget.isQueryRunning || _tabs.length >= _maxTabs
+                  onPressed:
+                      isQueryRunning || panelState.tabs.length >= _maxQueryTabs
                       ? null
-                      : _addTab,
+                      : () => _addTab(ref),
                   icon: const Icon(Icons.add),
                 ),
               ],
@@ -299,7 +397,7 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
                 child: TextField(
                   key: ValueKey<int>(activeTab.id),
                   controller: activeTab.controller,
-                  enabled: !widget.isQueryRunning,
+                  enabled: !isQueryRunning,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(12)),
@@ -307,24 +405,28 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
                     hintText: 'Try: name:alice && age>=30 && status=active',
                     prefixIcon: Icon(Icons.query_stats),
                   ),
-                  onSubmitted: (_) => _runActiveQuery(),
+                  onSubmitted: (_) => _runActiveQuery(ref, panelState),
                 ),
               ),
               const SizedBox(width: 12),
               FilledButton.icon(
-                onPressed: widget.isQueryRunning ? null : _runActiveQuery,
+                onPressed: isQueryRunning
+                    ? null
+                    : () => _runActiveQuery(ref, panelState),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Run'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed: widget.isQueryRunning ? null : _clearActiveQuery,
+                onPressed: isQueryRunning
+                    ? null
+                    : () => _clearActiveQuery(ref, panelState),
                 icon: const Icon(Icons.clear),
                 label: const Text('Clear'),
               ),
             ],
           ),
-          if (widget.isQueryRunning) ...<Widget>[
+          if (isQueryRunning) ...<Widget>[
             const SizedBox(height: 8),
             Row(
               children: const <Widget>[
@@ -338,10 +440,10 @@ class _HomeQueryPanelState extends State<HomeQueryPanel> {
               ],
             ),
           ],
-          if (widget.queryValidationError != null) ...<Widget>[
+          if (queryValidationError != null) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              widget.queryValidationError!,
+              queryValidationError!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],

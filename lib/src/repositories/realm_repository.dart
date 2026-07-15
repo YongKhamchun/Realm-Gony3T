@@ -18,6 +18,7 @@ class RealmClassSummary {
 class RealmUserRepository {
   Realm? _realm;
   String? _openedSchemaName;
+  final Map<int, RealmObject> _lazyObjectRefs = <int, RealmObject>{};
 
   String? get openedPath => _realm?.config.path;
   String? get openedSchemaName => _openedSchemaName;
@@ -26,6 +27,7 @@ class RealmUserRepository {
     _realm?.close();
     _realm = null;
     _openedSchemaName = null;
+    _lazyObjectRefs.clear();
   }
 
   List<Map<String, dynamic>> openAndReadUsers(
@@ -275,6 +277,23 @@ class RealmUserRepository {
     return List<Map<String, dynamic>>.unmodifiable(output);
   }
 
+  Future<Map<String, dynamic>?> readLazyObjectByRefAsync(
+    int lazyRef, {
+    int? maxDepth,
+  }) async {
+    final RealmObject? object = _lazyObjectRefs[lazyRef];
+    if (object == null) {
+      return null;
+    }
+
+    await Future<void>.delayed(Duration.zero);
+    return _toMap(
+      object,
+      maxDepth: maxDepth,
+      traversalBudget: _TraversalBudget(_nodeBudgetForDepth(maxDepth)),
+    );
+  }
+
   List<int>? _parseEncryptionKey(String? rawInput) {
     final String input = rawInput?.trim() ?? '';
     if (input.isEmpty) {
@@ -355,7 +374,9 @@ class RealmUserRepository {
 
   int _nodeBudgetForDepth(int? maxDepth) {
     if (maxDepth == null) {
-      return 900;
+      // Full-depth mode: keep traversal budget effectively unbounded to avoid
+      // node_budget truncation markers in explorer views.
+      return 2147483647;
     }
     if (maxDepth >= 10) {
       return 900;
@@ -512,6 +533,14 @@ class RealmUserRepository {
   }) {
     if (maxDepth != null && depth > maxDepth) {
       if (value is RealmObject || value is EmbeddedObject) {
+        if (value is RealmObject) {
+          final int lazyRef = _registerLazyObject(value);
+          return <String, dynamic>{
+            '_truncated': true,
+            '_lazyRef': lazyRef,
+            '_lazyClass': value.objectSchema.name,
+          };
+        }
         return <String, dynamic>{'_truncated': true};
       }
       if (value is Iterable) {
@@ -525,6 +554,15 @@ class RealmUserRepository {
 
     if (value is RealmObject || value is EmbeddedObject) {
       if (!traversalBudget.tryTake()) {
+        if (value is RealmObject) {
+          final int lazyRef = _registerLazyObject(value);
+          return <String, dynamic>{
+            '_truncated': true,
+            '_reason': 'node_budget',
+            '_lazyRef': lazyRef,
+            '_lazyClass': value.objectSchema.name,
+          };
+        }
         return <String, dynamic>{'_truncated': true, '_reason': 'node_budget'};
       }
     }
@@ -566,6 +604,12 @@ class RealmUserRepository {
       }
     }
     return value;
+  }
+
+  int _registerLazyObject(RealmObject object) {
+    final int ref = identityHashCode(object);
+    _lazyObjectRefs[ref] = object;
+    return ref;
   }
 }
 

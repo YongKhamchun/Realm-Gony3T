@@ -13,6 +13,7 @@ class HomeMobileBody extends StatelessWidget {
     required this.schemaName,
     required this.onSelectClass,
     required this.onExportClassFullDepthJson,
+    required this.onResolveLazyObjectRef,
   });
 
   final List<RealmClassSummary> classes;
@@ -23,6 +24,8 @@ class HomeMobileBody extends StatelessWidget {
   final String? schemaName;
   final ValueChanged<String> onSelectClass;
   final Future<void> Function(String className) onExportClassFullDepthJson;
+  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  onResolveLazyObjectRef;
 
   @override
   Widget build(BuildContext context) {
@@ -52,8 +55,15 @@ class HomeMobileBody extends StatelessWidget {
                   onExportClassFullDepthJson: onExportClassFullDepthJson,
                 ),
                 HomeJsonView(documents: documents),
-                HomeTableView(documents: documents, columns: tableColumns),
-                HomeInspectorView(documents: documents),
+                HomeTableView(
+                  documents: documents,
+                  columns: tableColumns,
+                  onResolveLazyObjectRef: onResolveLazyObjectRef,
+                ),
+                HomeInspectorView(
+                  documents: documents,
+                  onResolveLazyObjectRef: onResolveLazyObjectRef,
+                ),
               ],
             ),
           ),

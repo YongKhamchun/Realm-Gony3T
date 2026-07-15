@@ -342,6 +342,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                         schemaName: state.openedSchemaName,
                         onSelectClass: _selectClass,
                         onExportClassFullDepthJson: _exportClassFullDepthJson,
+                        onResolveLazyObjectRef: notifier.resolveLazyObjectRef,
                       );
                     }
 
@@ -390,11 +391,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                             displayRangeLabel: state.displayRangeLabel,
                             currentDepth: state.loadDepth,
                             isLoading: state.isLoadingData,
+                            onResolveLazyObjectRef:
+                                notifier.resolveLazyObjectRef,
                             depthOptions: const <int>[
                               3,
-                              5,
-                              7,
-                              10,
                               HomeNotifier.fullLoadDepth,
                             ],
                             onSelectDepth:

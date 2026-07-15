@@ -80,6 +80,162 @@ _loadedDataTabsProvider = NotifierProvider<_LoadedDataTabsNotifier, Set<int>>(
   _LoadedDataTabsNotifier.new,
 );
 
+final NotifierProvider<_TableNestedResolveNotifier, bool>
+_tableNestedResolveProvider =
+    NotifierProvider<_TableNestedResolveNotifier, bool>(
+      _TableNestedResolveNotifier.new,
+    );
+
+class _TableNestedResolveNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setBusy(bool value) {
+    state = value;
+  }
+}
+
+final NotifierProvider<_InspectorLayoutNotifier, _InspectorLayoutState>
+_inspectorLayoutProvider =
+    NotifierProvider<_InspectorLayoutNotifier, _InspectorLayoutState>(
+      _InspectorLayoutNotifier.new,
+    );
+
+class _InspectorLayoutState {
+  const _InspectorLayoutState({
+    required this.keyWidth,
+    required this.isResizing,
+    required this.lastResizeDx,
+  });
+
+  final double keyWidth;
+  final bool isResizing;
+  final double lastResizeDx;
+
+  _InspectorLayoutState copyWith({
+    double? keyWidth,
+    bool? isResizing,
+    double? lastResizeDx,
+  }) {
+    return _InspectorLayoutState(
+      keyWidth: keyWidth ?? this.keyWidth,
+      isResizing: isResizing ?? this.isResizing,
+      lastResizeDx: lastResizeDx ?? this.lastResizeDx,
+    );
+  }
+}
+
+class _InspectorLayoutNotifier extends Notifier<_InspectorLayoutState> {
+  static const double _minInspectorKeyWidth = 110;
+  static const double _maxInspectorKeyWidth = 460;
+
+  @override
+  _InspectorLayoutState build() {
+    return const _InspectorLayoutState(
+      keyWidth: 150,
+      isResizing: false,
+      lastResizeDx: 0,
+    );
+  }
+
+  void startResize(double dx) {
+    state = state.copyWith(isResizing: true, lastResizeDx: dx);
+  }
+
+  void resizeTo(double dx) {
+    if (!state.isResizing) {
+      return;
+    }
+
+    final double delta = dx - state.lastResizeDx;
+    final double nextWidth = (state.keyWidth + delta).clamp(
+      _minInspectorKeyWidth,
+      _maxInspectorKeyWidth,
+    );
+    state = state.copyWith(keyWidth: nextWidth, lastResizeDx: dx);
+  }
+
+  void stopResize() {
+    if (!state.isResizing) {
+      return;
+    }
+    state = state.copyWith(isResizing: false);
+  }
+}
+
+final NotifierProvider<
+  _InspectorNodeResolveNotifier,
+  Map<String, _InspectorNodeResolveState>
+>
+_inspectorNodeResolveProvider =
+    NotifierProvider<
+      _InspectorNodeResolveNotifier,
+      Map<String, _InspectorNodeResolveState>
+    >(_InspectorNodeResolveNotifier.new);
+
+class _InspectorNodeResolveState {
+  const _InspectorNodeResolveState({
+    required this.sourceIdentity,
+    required this.isResolving,
+    this.resolvedValue,
+  });
+
+  final int sourceIdentity;
+  final bool isResolving;
+  final Map<String, dynamic>? resolvedValue;
+
+  _InspectorNodeResolveState copyWith({
+    int? sourceIdentity,
+    bool? isResolving,
+    Map<String, dynamic>? resolvedValue,
+  }) {
+    return _InspectorNodeResolveState(
+      sourceIdentity: sourceIdentity ?? this.sourceIdentity,
+      isResolving: isResolving ?? this.isResolving,
+      resolvedValue: resolvedValue ?? this.resolvedValue,
+    );
+  }
+}
+
+class _InspectorNodeResolveNotifier
+    extends Notifier<Map<String, _InspectorNodeResolveState>> {
+  @override
+  Map<String, _InspectorNodeResolveState> build() =>
+      <String, _InspectorNodeResolveState>{};
+
+  void beginResolving(String nodePath, int sourceIdentity) {
+    final _InspectorNodeResolveState? current = state[nodePath];
+    final _InspectorNodeResolveState next = _InspectorNodeResolveState(
+      sourceIdentity: sourceIdentity,
+      isResolving: true,
+      resolvedValue: current?.sourceIdentity == sourceIdentity
+          ? current?.resolvedValue
+          : null,
+    );
+    state = <String, _InspectorNodeResolveState>{...state, nodePath: next};
+  }
+
+  void finishResolving(
+    String nodePath, {
+    required int sourceIdentity,
+    Map<String, dynamic>? resolvedValue,
+  }) {
+    final _InspectorNodeResolveState next = _InspectorNodeResolveState(
+      sourceIdentity: sourceIdentity,
+      isResolving: false,
+      resolvedValue: resolvedValue,
+    );
+    state = <String, _InspectorNodeResolveState>{...state, nodePath: next};
+  }
+
+  void clearAll() {
+    if (state.isEmpty) {
+      return;
+    }
+    state = <String, _InspectorNodeResolveState>{};
+  }
+}
+
 class _LoadedDataTabsNotifier extends Notifier<Set<int>> {
   @override
   Set<int> build() => <int>{1};
@@ -106,6 +262,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
     required this.canNext,
     required this.onPrev,
     required this.onNext,
+    required this.onResolveLazyObjectRef,
   });
 
   final List<Map<String, dynamic>> documents;
@@ -119,11 +276,16 @@ class HomeDataViewsPanel extends ConsumerWidget {
   final bool canNext;
   final VoidCallback onPrev;
   final VoidCallback onNext;
+  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  onResolveLazyObjectRef;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final int activeTabIndex = ref.watch(_dataViewTabIndexProvider);
     final Set<int> loadedTabs = ref.watch(_loadedDataTabsProvider);
+    final List<_TableScope> tableScopes = ref.watch(
+      _tableDrillProvider.select((_TableDrillState s) => s.scopes),
+    );
 
     return DefaultTabController(
       initialIndex: 1,
@@ -146,6 +308,18 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                 displayRangeLabel,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
+                              if (activeTabIndex == 1)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: _TableLayerInlinePath(
+                                    scopes: tableScopes,
+                                    onTapScope: (int index) {
+                                      ref
+                                          .read(_tableDrillProvider.notifier)
+                                          .navigateToScope(index);
+                                    },
+                                  ),
+                                ),
                               const SizedBox(height: 8),
                               Wrap(
                                 spacing: 8,
@@ -221,7 +395,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                           )
                                           .markLoaded(index);
                                     },
-                                    tabs: <Tab>[
+                                    tabs: const <Tab>[
                                       Tab(text: 'JSON'),
                                       Tab(text: 'Table'),
                                       Tab(text: 'Inspector'),
@@ -233,11 +407,32 @@ class HomeDataViewsPanel extends ConsumerWidget {
                           )
                         : Row(
                             children: <Widget>[
-                              Text(
-                                displayRangeLabel,
-                                style: Theme.of(context).textTheme.bodySmall,
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 10,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: <Widget>[
+                                    Text(
+                                      displayRangeLabel,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                    if (activeTabIndex == 1)
+                                      _TableLayerInlinePath(
+                                        scopes: tableScopes,
+                                        onTapScope: (int index) {
+                                          ref
+                                              .read(
+                                                _tableDrillProvider.notifier,
+                                              )
+                                              .navigateToScope(index);
+                                        },
+                                      ),
+                                  ],
+                                ),
                               ),
-                              const Spacer(),
                               DecoratedBox(
                                 decoration: BoxDecoration(
                                   border: Border.all(
@@ -306,7 +501,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                       .read(_loadedDataTabsProvider.notifier)
                                       .markLoaded(index);
                                 },
-                                tabs: <Tab>[
+                                tabs: const <Tab>[
                                   Tab(text: 'JSON'),
                                   Tab(text: 'Table'),
                                   Tab(text: 'Inspector'),
@@ -336,6 +531,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                 ),
                                 documents: documents,
                                 columns: tableColumns,
+                                onResolveLazyObjectRef: onResolveLazyObjectRef,
                               )
                             : const _DeferredTabPlaceholder(
                                 label: 'Open Table tab to load records',
@@ -346,6 +542,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                   'home-data-inspector',
                                 ),
                                 documents: documents,
+                                onResolveLazyObjectRef: onResolveLazyObjectRef,
                               )
                             : const _DeferredTabPlaceholder(
                                 label: 'Open Inspector tab to inspect tree',
@@ -539,133 +736,380 @@ class HomeJsonView extends ConsumerWidget {
   }
 }
 
-class HomeTableView extends StatefulWidget {
+class HomeTableView extends ConsumerStatefulWidget {
   const HomeTableView({
     super.key,
     required this.documents,
     required this.columns,
+    required this.onResolveLazyObjectRef,
   });
 
   final List<Map<String, dynamic>> documents;
   final List<String> columns;
+  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  onResolveLazyObjectRef;
 
   @override
-  State<HomeTableView> createState() => _HomeTableViewState();
+  ConsumerState<HomeTableView> createState() => _HomeTableViewState();
 }
 
-class _HomeTableViewState extends State<HomeTableView> {
-  static const double _minColumnWidth = 120;
-  static const double _maxColumnWidth = 720;
+class _HomeTableViewState extends ConsumerState<HomeTableView> {
+  _TableDrillRequest? _pendingRootRequest;
+  bool _isRootSyncScheduled = false;
 
-  final List<double> _columnWidths = <double>[];
-  String _activeColumnsKey = '';
+  @override
+  void initState() {
+    super.initState();
+    _syncRootScope();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeTableView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.documents, widget.documents) ||
+        !listEquals(oldWidget.columns, widget.columns)) {
+      _syncRootScope();
+    }
+  }
+
+  void _syncRootScope() {
+    _pendingRootRequest = _TableDrillRequest(
+      rootRows: widget.documents,
+      rootColumns: widget.columns,
+    );
+
+    if (_isRootSyncScheduled) {
+      return;
+    }
+
+    _isRootSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isRootSyncScheduled = false;
+      if (!mounted) {
+        return;
+      }
+
+      final _TableDrillRequest? request = _pendingRootRequest;
+      _pendingRootRequest = null;
+      if (request == null) {
+        return;
+      }
+
+      ref.read(_tableDrillProvider.notifier).setRoot(request);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> documents = widget.documents;
-    final List<String> columns = widget.columns;
+    final _TableDrillState state = ref.watch(_tableDrillProvider);
+    final _TableScope scope = state.scopes.last;
+    final List<Map<String, dynamic>> rows = scope.rows;
 
-    if (documents.isEmpty) {
-      return const Center(child: Text('No data found for this query'));
-    }
+    return rows.isEmpty
+        ? const Center(child: Text('No data found for this query'))
+        : LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double tableWidth = state.columnWidths.fold<double>(
+                0,
+                (double sum, double width) => sum + width,
+              );
+              final double minWidth = constraints.maxWidth;
+              final double effectiveTableWidth = tableWidth < minWidth
+                  ? minWidth
+                  : tableWidth;
 
-    final List<String> effectiveColumns = columns.isEmpty
-        ? documents.first.keys
-              .where((String key) => key != '_id')
-              .toList(growable: false)
-        : columns;
-
-    _ensureColumnWidths(effectiveColumns, documents);
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double tableWidth = _columnWidths.fold<double>(
-          0,
-          (double sum, double width) => sum + width,
-        );
-        final double minWidth = constraints.maxWidth;
-
-        return CustomScrollView(
-          physics: const ClampingScrollPhysics(),
-          scrollDirection: Axis.horizontal,
-          slivers: <Widget>[
-            SliverPadding(
-              padding: const EdgeInsets.all(12),
-              sliver: SliverToBoxAdapter(
-                child: SizedBox(
-                  width: tableWidth < minWidth ? minWidth : tableWidth,
-                  child: SelectionArea(
-                    child: CustomScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      slivers: <Widget>[
-                        SliverToBoxAdapter(
-                          child: _TableHeaderRow(
-                            columns: effectiveColumns,
-                            columnWidths: _columnWidths,
-                            onResizeColumn: _resizeColumn,
+              return CustomScrollView(
+                physics: const ClampingScrollPhysics(),
+                scrollDirection: Axis.horizontal,
+                slivers: <Widget>[
+                  SliverPadding(
+                    padding: const EdgeInsets.all(12),
+                    sliver: SliverToBoxAdapter(
+                      child: SizedBox(
+                        width: effectiveTableWidth,
+                        child: SelectionArea(
+                          child: CustomScrollView(
+                            physics: const ClampingScrollPhysics(),
+                            slivers: <Widget>[
+                              SliverToBoxAdapter(
+                                child: _TableHeaderRow(
+                                  columns: state.effectiveColumns,
+                                  columnWidths: state.columnWidths,
+                                  onResizeColumn: (int index, double deltaX) {
+                                    ref
+                                        .read(_tableDrillProvider.notifier)
+                                        .resizeColumn(index, deltaX);
+                                  },
+                                ),
+                              ),
+                              SliverList.builder(
+                                itemCount: rows.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  return _TableDataRow(
+                                    rowIndex: index,
+                                    columns: state.effectiveColumns,
+                                    columnWidths: state.columnWidths,
+                                    document: rows[index],
+                                    onOpenNested:
+                                        (
+                                          int rowIndex,
+                                          String column,
+                                          dynamic value,
+                                        ) {
+                                          unawaited(
+                                            _openNestedValue(
+                                              rowIndex,
+                                              column,
+                                              value,
+                                            ),
+                                          );
+                                        },
+                                  );
+                                },
+                              ),
+                            ],
                           ),
                         ),
-                        SliverList.builder(
-                          itemCount: documents.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            return _TableDataRow(
-                              rowIndex: index,
-                              columns: effectiveColumns,
-                              columnWidths: _columnWidths,
-                              document: documents[index],
-                            );
-                          },
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+                ],
+              );
+            },
+          );
+  }
+
+  Future<void> _openNestedValue(
+    int rowIndex,
+    String column,
+    dynamic value,
+  ) async {
+    final dynamic resolved = await _resolveLazyValueIfNeeded(value);
+    if (!_isMeaningfullyExpandable(resolved)) {
+      return;
+    }
+    ref
+        .read(_tableDrillProvider.notifier)
+        .openNestedTable(rowIndex, column, resolved);
+  }
+
+  Future<dynamic> _resolveLazyValueIfNeeded(dynamic value) async {
+    final int? lazyRef = _lazyRefFromNode(value);
+    if (lazyRef == null) {
+      return value;
+    }
+
+    ref.read(_tableNestedResolveProvider.notifier).setBusy(true);
+
+    try {
+      final Map<String, dynamic>? resolved = await widget
+          .onResolveLazyObjectRef(lazyRef);
+      if (resolved == null) {
+        return value;
+      }
+      return _attachLazyMetaAfterResolve(original: value, resolved: resolved);
+    } finally {
+      ref.read(_tableNestedResolveProvider.notifier).setBusy(false);
+    }
+  }
+}
+
+final NotifierProvider<_TableDrillNotifier, _TableDrillState>
+_tableDrillProvider = NotifierProvider<_TableDrillNotifier, _TableDrillState>(
+  _TableDrillNotifier.new,
+);
+
+class _TableDrillRequest {
+  const _TableDrillRequest({required this.rootRows, required this.rootColumns});
+
+  final List<Map<String, dynamic>> rootRows;
+  final List<String> rootColumns;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _TableDrillRequest &&
+        identical(rootRows, other.rootRows) &&
+        identical(rootColumns, other.rootColumns);
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(identityHashCode(rootRows), identityHashCode(rootColumns));
+}
+
+class _TableDrillState {
+  const _TableDrillState({
+    required this.scopes,
+    required this.effectiveColumns,
+    required this.columnWidths,
+  });
+
+  final List<_TableScope> scopes;
+  final List<String> effectiveColumns;
+  final List<double> columnWidths;
+}
+
+class _TableDrillNotifier extends Notifier<_TableDrillState> {
+  static const double _minColumnWidth = 120;
+  static const double _maxColumnWidth = 720;
+  static const String _selfFallbackColumnKey = '__self__';
+
+  @override
+  _TableDrillState build() {
+    return const _TableDrillState(
+      scopes: <_TableScope>[
+        _TableScope(
+          label: 'Root',
+          rows: <Map<String, dynamic>>[],
+          preferredColumns: <String>[],
+        ),
+      ],
+      effectiveColumns: <String>[],
+      columnWidths: <double>[],
     );
   }
 
-  void _ensureColumnWidths(
-    List<String> effectiveColumns,
-    List<Map<String, dynamic>> rows,
-  ) {
-    final String columnsKey = effectiveColumns.join('|');
-    if (_activeColumnsKey == columnsKey &&
-        _columnWidths.length == effectiveColumns.length) {
-      return;
-    }
-
-    _activeColumnsKey = columnsKey;
-    _columnWidths
-      ..clear()
-      ..addAll(
-        effectiveColumns.map(
-          (String column) => _estimateColumnWidth(column, rows),
-        ),
-      );
+  void setRoot(_TableDrillRequest request) {
+    state = _buildStateForScopes(<_TableScope>[
+      _TableScope(
+        label: 'Root',
+        rows: request.rootRows,
+        preferredColumns: request.rootColumns,
+      ),
+    ]);
   }
 
-  void _resizeColumn(int index, double deltaX) {
-    if (index < 0 || index >= _columnWidths.length) {
+  void resizeColumn(int index, double deltaX) {
+    if (index < 0 || index >= state.columnWidths.length) {
       return;
     }
 
-    setState(() {
-      final double next = (_columnWidths[index] + deltaX).clamp(
-        _minColumnWidth,
-        _maxColumnWidth,
+    final List<double> nextWidths = List<double>.of(state.columnWidths);
+    final double next = (nextWidths[index] + deltaX).clamp(
+      _minColumnWidth,
+      _maxColumnWidth,
+    );
+    nextWidths[index] = next;
+
+    state = _TableDrillState(
+      scopes: state.scopes,
+      effectiveColumns: state.effectiveColumns,
+      columnWidths: List<double>.unmodifiable(nextWidths),
+    );
+  }
+
+  void openNestedTable(int rowIndex, String column, dynamic value) {
+    final List<Map<String, dynamic>>? nextRows = _rowsFromNestedValue(value);
+    if (nextRows == null) {
+      return;
+    }
+
+    final String label = '#$rowIndex.$column';
+    final List<_TableScope> nextScopes = List<_TableScope>.of(state.scopes)
+      ..add(
+        _TableScope(label: label, rows: nextRows, preferredColumns: const []),
       );
-      _columnWidths[index] = next;
-    });
+
+    state = _buildStateForScopes(nextScopes);
+  }
+
+  void navigateToScope(int index) {
+    if (index < 0 || index >= state.scopes.length) {
+      return;
+    }
+
+    final List<_TableScope> nextScopes = state.scopes
+        .take(index + 1)
+        .toList(growable: true);
+    state = _buildStateForScopes(nextScopes);
+  }
+
+  _TableDrillState _buildStateForScopes(List<_TableScope> scopes) {
+    final _TableScope current = scopes.last;
+    final List<String> effectiveColumns = _resolveColumns(
+      current.rows,
+      current.preferredColumns,
+    );
+
+    final List<double> widths = effectiveColumns
+        .map((String column) => _estimateColumnWidth(column, current.rows))
+        .toList(growable: false);
+
+    return _TableDrillState(
+      scopes: List<_TableScope>.unmodifiable(scopes),
+      effectiveColumns: List<String>.unmodifiable(effectiveColumns),
+      columnWidths: List<double>.unmodifiable(widths),
+    );
+  }
+
+  List<String> _resolveColumns(
+    List<Map<String, dynamic>> rows,
+    List<String> preferred,
+  ) {
+    if (rows.isEmpty) {
+      return preferred;
+    }
+
+    if (preferred.isNotEmpty) {
+      return preferred;
+    }
+
+    final Set<String> ordered = <String>{};
+    for (final Map<String, dynamic> row in rows) {
+      ordered.addAll(
+        row.keys.where(
+          (String key) => key != '_id' && !_isInternalMetaKey(key),
+        ),
+      );
+    }
+
+    if (ordered.isEmpty && rows.isNotEmpty) {
+      return const <String>[_selfFallbackColumnKey];
+    }
+
+    return ordered.toList(growable: false);
+  }
+
+  List<Map<String, dynamic>>? _rowsFromNestedValue(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return <Map<String, dynamic>>[value];
+    }
+
+    if (value is Map) {
+      final Map<String, dynamic> casted = <String, dynamic>{};
+      value.forEach((dynamic k, dynamic v) {
+        casted['$k'] = v;
+      });
+      return <Map<String, dynamic>>[casted];
+    }
+
+    if (value is List<dynamic>) {
+      return List<Map<String, dynamic>>.generate(value.length, (int i) {
+        final dynamic item = value[i];
+        if (item is Map<String, dynamic>) {
+          return <String, dynamic>{'_index': i, ...item};
+        }
+        if (item is Map) {
+          final Map<String, dynamic> casted = <String, dynamic>{'_index': i};
+          item.forEach((dynamic k, dynamic v) {
+            casted['$k'] = v;
+          });
+          return casted;
+        }
+        return <String, dynamic>{'_index': i, 'value': item};
+      });
+    }
+
+    return null;
   }
 
   double _estimateColumnWidth(String column, List<Map<String, dynamic>> rows) {
     int maxChars = column.length;
     for (final Map<String, dynamic> row in rows) {
-      final int len = displayValue(row[column]).length;
+      final dynamic cellValue = column == _selfFallbackColumnKey
+          ? row
+          : row[column];
+      final int len = displayValue(cellValue).length;
       if (len > maxChars) {
         maxChars = len;
       }
@@ -673,6 +1117,55 @@ class _HomeTableViewState extends State<HomeTableView> {
 
     final double estimated = maxChars * 7.2 + 28;
     return estimated.clamp(170, 520).toDouble();
+  }
+}
+
+class _TableScope {
+  const _TableScope({
+    required this.label,
+    required this.rows,
+    required this.preferredColumns,
+  });
+
+  final String label;
+  final List<Map<String, dynamic>> rows;
+  final List<String> preferredColumns;
+}
+
+class _TableLayerInlinePath extends StatelessWidget {
+  const _TableLayerInlinePath({required this.scopes, required this.onTapScope});
+
+  final List<_TableScope> scopes;
+  final ValueChanged<int> onTapScope;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: List<Widget>.generate(scopes.length, (int index) {
+          final bool isLast = index == scopes.length - 1;
+          return Row(
+            children: <Widget>[
+              TextButton(
+                onPressed: isLast ? null : () => onTapScope(index),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 24),
+                ),
+                child: Text(scopes[index].label),
+              ),
+              if (!isLast)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 2),
+                  child: Icon(Icons.chevron_right, size: 14),
+                ),
+            ],
+          );
+        }),
+      ),
+    );
   }
 }
 
@@ -701,7 +1194,7 @@ class _TableHeaderRow extends StatelessWidget {
       child: Row(
         children: List<Widget>.generate(columns.length, (int index) {
           return _ResizableHeaderCell(
-            text: columns[index],
+            text: _displayTableColumnName(columns[index]),
             width: columnWidths[index],
             onResize: (double deltaX) => onResizeColumn(index, deltaX),
           );
@@ -717,12 +1210,14 @@ class _TableDataRow extends StatelessWidget {
     required this.columns,
     required this.columnWidths,
     required this.document,
+    required this.onOpenNested,
   });
 
   final int rowIndex;
   final List<String> columns;
   final List<double> columnWidths;
   final Map<String, dynamic> document;
+  final void Function(int rowIndex, String column, dynamic value) onOpenNested;
 
   @override
   Widget build(BuildContext context) {
@@ -730,7 +1225,6 @@ class _TableDataRow extends StatelessWidget {
     final Color bg = isEven
         ? Theme.of(context).colorScheme.surface
         : Theme.of(context).colorScheme.surfaceContainerLowest;
-
     return DecoratedBox(
       decoration: BoxDecoration(
         color: bg,
@@ -741,14 +1235,26 @@ class _TableDataRow extends StatelessWidget {
       child: Row(
         children: List<Widget>.generate(columns.length, (int index) {
           final String key = columns[index];
+          final dynamic cellValue =
+              key == _TableDrillNotifier._selfFallbackColumnKey
+              ? document
+              : document[key];
           return _TableCell(
-            text: displayValue(document[key]),
+            value: cellValue,
             width: columnWidths[index],
+            onOpenNested: (dynamic value) => onOpenNested(rowIndex, key, value),
           );
         }),
       ),
     );
   }
+}
+
+String _displayTableColumnName(String column) {
+  if (column == _TableDrillNotifier._selfFallbackColumnKey) {
+    return 'value';
+  }
+  return column;
 }
 
 class _ResizableHeaderCell extends StatefulWidget {
@@ -835,44 +1341,102 @@ class _ResizableHeaderCellState extends State<_ResizableHeaderCell> {
 }
 
 class _TableCell extends StatelessWidget {
-  const _TableCell({required this.text, required this.width});
+  const _TableCell({
+    required this.value,
+    required this.width,
+    required this.onOpenNested,
+  });
 
-  final String text;
+  final dynamic value;
   final double width;
+  final ValueChanged<dynamic> onOpenNested;
 
   @override
   Widget build(BuildContext context) {
+    final bool isExpandable = _isMeaningfullyExpandable(value);
+    final String text = displayValue(value);
+
     return SizedBox(
       width: width,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ),
+      child: isExpandable
+          ? InkWell(
+              onTap: () => onOpenNested(value),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
     );
   }
 }
 
+bool _isMeaningfullyExpandable(dynamic value) {
+  if (value is List<dynamic>) {
+    return value.isNotEmpty;
+  }
+
+  if (value is Map<String, dynamic>) {
+    if (_lazyRefFromNode(value) != null) {
+      return true;
+    }
+
+    for (final String key in value.keys) {
+      if (!_isInternalMetaKey(key)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  return false;
+}
+
 class HomeInspectorView extends ConsumerStatefulWidget {
-  const HomeInspectorView({super.key, required this.documents});
+  const HomeInspectorView({
+    super.key,
+    required this.documents,
+    required this.onResolveLazyObjectRef,
+  });
 
   final List<Map<String, dynamic>> documents;
+  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  onResolveLazyObjectRef;
 
   @override
   ConsumerState<HomeInspectorView> createState() => _HomeInspectorViewState();
 }
 
 class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
-  static const double _minInspectorKeyWidth = 110;
-  static const double _maxInspectorKeyWidth = 460;
-  double _inspectorKeyWidth = 150;
-  bool _isResizingKeyColumn = false;
-  double _lastResizeDx = 0;
-
   @override
   void initState() {
     super.initState();
@@ -896,36 +1460,26 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
       ref
           .read(inspectorTreeExpansionProvider.notifier)
           .replaceAll(const <String, bool>{});
+      ref.read(_inspectorNodeResolveProvider.notifier).clearAll();
     });
   }
 
   void _startResize(PointerDownEvent event) {
-    _isResizingKeyColumn = true;
-    _lastResizeDx = event.position.dx;
+    ref.read(_inspectorLayoutProvider.notifier).startResize(event.position.dx);
   }
 
   void _resizeKeyColumn(PointerMoveEvent event) {
-    if (!_isResizingKeyColumn) {
-      return;
-    }
-
-    final double delta = event.position.dx - _lastResizeDx;
-    _lastResizeDx = event.position.dx;
-
-    setState(() {
-      _inspectorKeyWidth = (_inspectorKeyWidth + delta).clamp(
-        _minInspectorKeyWidth,
-        _maxInspectorKeyWidth,
-      );
-    });
+    ref.read(_inspectorLayoutProvider.notifier).resizeTo(event.position.dx);
   }
 
   void _stopResize(_) {
-    _isResizingKeyColumn = false;
+    ref.read(_inspectorLayoutProvider.notifier).stopResize();
   }
 
   @override
   Widget build(BuildContext context) {
+    final _InspectorLayoutState layout = ref.watch(_inspectorLayoutProvider);
+
     if (widget.documents.isEmpty) {
       return const Center(child: Text('No data found for this page'));
     }
@@ -942,7 +1496,7 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: <Widget>[
-                SizedBox(width: _inspectorKeyWidth, child: const Text('Key')),
+                SizedBox(width: layout.keyWidth, child: const Text('Key')),
                 MouseRegion(
                   cursor: SystemMouseCursors.resizeColumn,
                   child: Listener(
@@ -993,7 +1547,8 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
                       value: doc,
                       depth: 0,
                       nodePath: key,
-                      keyColumnWidth: _inspectorKeyWidth,
+                      keyColumnWidth: layout.keyWidth,
+                      onResolveLazyObjectRef: widget.onResolveLazyObjectRef,
                     );
                   }, childCount: widget.documents.length),
                 ),
@@ -1014,6 +1569,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
     required this.depth,
     required this.nodePath,
     required this.keyColumnWidth,
+    required this.onResolveLazyObjectRef,
   });
 
   final String keyLabel;
@@ -1021,12 +1577,67 @@ class HomeInspectorNodeTile extends ConsumerWidget {
   final int depth;
   final String nodePath;
   final double keyColumnWidth;
+  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  onResolveLazyObjectRef;
 
-  List<Widget> _buildChildren() {
-    final dynamic value = this.value;
+  Future<void> _resolveIfNeeded(
+    WidgetRef ref,
+    _InspectorNodeResolveState? resolveState,
+  ) async {
+    final dynamic effectiveValue = resolveState?.resolvedValue ?? value;
+    final int? lazyRef = _lazyRefFromNode(effectiveValue);
+    if (lazyRef == null || (resolveState?.isResolving ?? false)) {
+      return;
+    }
+
+    final int sourceIdentity = identityHashCode(value);
+    ref
+        .read(_inspectorNodeResolveProvider.notifier)
+        .beginResolving(nodePath, sourceIdentity);
+
+    try {
+      final Map<String, dynamic>? resolved = await onResolveLazyObjectRef(
+        lazyRef,
+      );
+      if (resolved == null) {
+        ref
+            .read(_inspectorNodeResolveProvider.notifier)
+            .finishResolving(nodePath, sourceIdentity: sourceIdentity);
+        return;
+      }
+
+      final Map<String, dynamic> attached = _attachLazyMetaAfterResolve(
+        original: effectiveValue,
+        resolved: resolved,
+      );
+      ref
+          .read(_inspectorNodeResolveProvider.notifier)
+          .finishResolving(
+            nodePath,
+            sourceIdentity: sourceIdentity,
+            resolvedValue: attached,
+          );
+    } finally {
+      final _InspectorNodeResolveState? latest = ref.read(
+        _inspectorNodeResolveProvider.select(
+          (Map<String, _InspectorNodeResolveState> m) => m[nodePath],
+        ),
+      );
+      if (latest?.isResolving ?? false) {
+        ref
+            .read(_inspectorNodeResolveProvider.notifier)
+            .finishResolving(nodePath, sourceIdentity: sourceIdentity);
+      }
+    }
+  }
+
+  List<Widget> _buildChildren(dynamic value) {
     if (value is Map<String, dynamic>) {
       final List<Widget> items = <Widget>[];
       value.forEach((String key, dynamic childValue) {
+        if (_isInternalMetaKey(key)) {
+          return;
+        }
         final String childPath = '$nodePath.$key';
         items.add(
           HomeInspectorNodeTile(
@@ -1036,6 +1647,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
             depth: depth + 1,
             nodePath: childPath,
             keyColumnWidth: keyColumnWidth,
+            onResolveLazyObjectRef: onResolveLazyObjectRef,
           ),
         );
       });
@@ -1054,6 +1666,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
             depth: depth + 1,
             nodePath: childPath,
             keyColumnWidth: keyColumnWidth,
+            onResolveLazyObjectRef: onResolveLazyObjectRef,
           ),
         );
       }
@@ -1065,16 +1678,30 @@ class HomeInspectorNodeTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dynamic value = this.value;
-    final bool isMap = value is Map<String, dynamic>;
-    final bool isList = value is List<dynamic>;
+    final int sourceIdentity = identityHashCode(value);
+    final _InspectorNodeResolveState? resolveState = ref.watch(
+      _inspectorNodeResolveProvider.select(
+        (Map<String, _InspectorNodeResolveState> m) => m[nodePath],
+      ),
+    );
+
+    final bool stateMatchesSource =
+        resolveState?.sourceIdentity == sourceIdentity;
+    final dynamic currentValue = stateMatchesSource
+        ? (resolveState?.resolvedValue ?? value)
+        : value;
+    final bool isResolving =
+        stateMatchesSource && (resolveState?.isResolving ?? false);
+
+    final bool isMap = currentValue is Map<String, dynamic>;
+    final bool isList = currentValue is List<dynamic>;
     final bool isComplex = isMap || isList;
 
     if (!isComplex) {
       return HomeInspectorRow(
         keyLabel: keyLabel,
-        valueLabel: displayValue(value),
-        typeLabel: valueType(value),
+        valueLabel: displayValue(currentValue),
+        typeLabel: valueType(currentValue),
         depth: depth,
         keyColumnWidth: keyColumnWidth,
       );
@@ -1092,6 +1719,9 @@ class HomeInspectorNodeTile extends ConsumerWidget {
       childrenPadding: EdgeInsets.zero,
       initiallyExpanded: isExpanded,
       onExpansionChanged: (bool expanded) {
+        if (expanded) {
+          unawaited(_resolveIfNeeded(ref, resolveState));
+        }
         ref
             .read(inspectorTreeExpansionProvider.notifier)
             .setExpanded(nodePath, expanded);
@@ -1105,15 +1735,15 @@ class HomeInspectorNodeTile extends ConsumerWidget {
           const SizedBox(width: 20),
           Expanded(
             child: Text(
-              displayValue(value),
+              isResolving ? 'Loading...' : displayValue(currentValue),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          SizedBox(width: 90, child: Text(valueType(value))),
+          SizedBox(width: 90, child: Text(valueType(currentValue))),
         ],
       ),
-      children: isExpanded ? _buildChildren() : const <Widget>[],
+      children: isExpanded ? _buildChildren(currentValue) : const <Widget>[],
     );
   }
 }
@@ -1236,6 +1866,54 @@ String displayValue(dynamic value) {
     return 'null';
   }
   return '$value';
+}
+
+int? _lazyRefFromNode(dynamic value) {
+  if (value is! Map) {
+    return null;
+  }
+  final dynamic truncated = value['_truncated'];
+  final dynamic rawRef = value['_lazyRef'];
+  final bool lazyExpandable = value['_lazyExpandable'] == true;
+  if ((truncated != true && !lazyExpandable) || rawRef == null) {
+    return null;
+  }
+  if (rawRef is int) {
+    return rawRef;
+  }
+  if (rawRef is num) {
+    return rawRef.toInt();
+  }
+  return int.tryParse('$rawRef');
+}
+
+Map<String, dynamic> _attachLazyMetaAfterResolve({
+  required dynamic original,
+  required Map<String, dynamic> resolved,
+}) {
+  if (original is! Map) {
+    return resolved;
+  }
+
+  final dynamic lazyRef = original['_lazyRef'];
+  if (lazyRef == null) {
+    return resolved;
+  }
+
+  return <String, dynamic>{
+    ...resolved,
+    '_lazyRef': lazyRef,
+    '_lazyClass': original['_lazyClass'],
+    '_lazyExpandable': true,
+  };
+}
+
+bool _isInternalMetaKey(String key) {
+  return key == '_lazyRef' ||
+      key == '_lazyClass' ||
+      key == '_lazyExpandable' ||
+      key == '_truncated' ||
+      key == '_reason';
 }
 
 Object? toJsonSafe(Object? value) {

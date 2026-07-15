@@ -296,6 +296,10 @@ class HomeNotifier extends Notifier<HomeState> {
   static const int minLoadDepth = 1;
   static const int defaultLoadDepth = 3;
   static const int maxLoadDepth = 20;
+  static const int _fullModeViewportDepth = 1;
+  static const int _lazyResolveInitialDepth = 1;
+  static const int _lazyResolveStepDepth = 2;
+  static const int _lazyResolveSwitchToFullAtDepth = 11;
   static const int _largeClassThreshold = 200;
   static const int _veryLargeClassThreshold = 500;
   static const int _safeDepthForLargeClass = 7;
@@ -304,6 +308,7 @@ class HomeNotifier extends Notifier<HomeState> {
   int _activeQueryTabId = 1;
   final Map<int, _QueryTabSnapshot> _queryTabSnapshots =
       <int, _QueryTabSnapshot>{};
+  final Map<int, int> _lazyResolveClicksByRef = <int, int>{};
 
   @override
   HomeState build() {
@@ -363,6 +368,7 @@ class HomeNotifier extends Notifier<HomeState> {
     try {
       _queryTabSnapshots.clear();
       _activeQueryTabId = 1;
+      _lazyResolveClicksByRef.clear();
       state = state.copyWith(isLoadingData: true, loadError: null);
 
       final List<RealmClassSummary> classes = _repository.openAndListClasses(
@@ -410,6 +416,7 @@ class HomeNotifier extends Notifier<HomeState> {
     try {
       _queryTabSnapshots.clear();
       _activeQueryTabId = 1;
+      _lazyResolveClicksByRef.clear();
       state = state.copyWith(
         documents: const <Map<String, dynamic>>[],
         pageStart: 0,
@@ -460,9 +467,7 @@ class HomeNotifier extends Notifier<HomeState> {
               className,
               offset: offset,
               limit: limit,
-              maxDepth: state.loadDepth == fullLoadDepth
-                  ? null
-                  : state.loadDepth,
+              maxDepth: _maxDepthForViewportLoad(state.loadDepth),
               yieldEvery: _yieldEveryForDepth(state.loadDepth),
             );
 
@@ -829,9 +834,7 @@ class HomeNotifier extends Notifier<HomeState> {
               className,
               offset: 0,
               limit: null,
-              maxDepth: state.loadDepth == fullLoadDepth
-                  ? null
-                  : state.loadDepth,
+              maxDepth: _maxDepthForViewportLoad(state.loadDepth),
               yieldEvery: _yieldEveryForDepth(state.loadDepth),
             );
         watch.stop();
@@ -958,26 +961,53 @@ class HomeNotifier extends Notifier<HomeState> {
     );
   }
 
+  Future<Map<String, dynamic>?> resolveLazyObjectRef(
+    int lazyRef, {
+    int depth = _fullModeViewportDepth,
+  }) {
+    final int clickCount = (_lazyResolveClicksByRef[lazyRef] ?? 0) + 1;
+    _lazyResolveClicksByRef[lazyRef] = clickCount;
+
+    final int targetDepth = depth < 0
+        ? fullLoadDepth
+        : _lazyResolveInitialDepth + (clickCount - 1) * _lazyResolveStepDepth;
+    final int? maxDepth = targetDepth < 0
+        ? null
+        : (targetDepth >= _lazyResolveSwitchToFullAtDepth ? null : targetDepth);
+    return _repository.readLazyObjectByRefAsync(lazyRef, maxDepth: maxDepth);
+  }
+
+  int? _maxDepthForViewportLoad(int depth) {
+    if (depth == fullLoadDepth) {
+      // Full mode in viewport is progressive: start shallow and expand on tap.
+      return _fullModeViewportDepth;
+    }
+    return depth;
+  }
+
   int _resolveSafeDepthForClass({
     required String className,
     required int requestedDepth,
   }) {
+    // Full depth should remain uncapped when user explicitly requests it.
+    if (requestedDepth == fullLoadDepth) {
+      return requestedDepth;
+    }
+
     final int count = _classCountByName(className);
     if (count <= 0) {
       return requestedDepth;
     }
 
     if (count >= _veryLargeClassThreshold) {
-      if (requestedDepth == fullLoadDepth ||
-          requestedDepth > _safeDepthForVeryLargeClass) {
+      if (requestedDepth > _safeDepthForVeryLargeClass) {
         return _safeDepthForVeryLargeClass;
       }
       return requestedDepth;
     }
 
     if (count >= _largeClassThreshold) {
-      if (requestedDepth == fullLoadDepth ||
-          requestedDepth > _safeDepthForLargeClass) {
+      if (requestedDepth > _safeDepthForLargeClass) {
         return _safeDepthForLargeClass;
       }
       return requestedDepth;
