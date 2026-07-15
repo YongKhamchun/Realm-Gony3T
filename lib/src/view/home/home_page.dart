@@ -171,6 +171,22 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<HomeState>(homeProvider, (HomeState? previous, HomeState next) {
+      if (next.depthSnackbarMessage == null) {
+        return;
+      }
+
+      if (previous?.depthSnackbarVersion == next.depthSnackbarVersion) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(next.depthSnackbarMessage!)));
+
+      ref.read(homeProvider.notifier).clearDepthSnackbarMessage();
+    });
+
     final HomeState state = ref.watch(homeProvider);
     final HomeNotifier notifier = ref.read(homeProvider.notifier);
     final ThemeData theme = Theme.of(context);

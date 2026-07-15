@@ -23,8 +23,10 @@ class HomeState {
     required this.lastEncryptionKeyInput,
     required this.isLoadingData,
     required this.queryValidationError,
+    required this.depthSnackbarVersion,
     this.openedSchemaName,
     this.loadError,
+    this.depthSnackbarMessage,
   });
 
   factory HomeState.initial() {
@@ -57,8 +59,10 @@ class HomeState {
       lastEncryptionKeyInput: '',
       isLoadingData: false,
       queryValidationError: null,
+      depthSnackbarVersion: 0,
       openedSchemaName: null,
       loadError: null,
+      depthSnackbarMessage: null,
     );
   }
 
@@ -79,6 +83,8 @@ class HomeState {
   final String lastEncryptionKeyInput;
   final bool isLoadingData;
   final String? queryValidationError;
+  final String? depthSnackbarMessage;
+  final int depthSnackbarVersion;
 
   HomeState copyWith({
     List<Map<String, dynamic>>? documents,
@@ -96,6 +102,8 @@ class HomeState {
     String? lastEncryptionKeyInput,
     bool? isLoadingData,
     Object? queryValidationError = _noChange,
+    Object? depthSnackbarMessage = _noChange,
+    int? depthSnackbarVersion,
   }) {
     return HomeState(
       documents: documents ?? this.documents,
@@ -118,6 +126,10 @@ class HomeState {
       queryValidationError: identical(queryValidationError, _noChange)
           ? this.queryValidationError
           : queryValidationError as String?,
+      depthSnackbarMessage: identical(depthSnackbarMessage, _noChange)
+          ? this.depthSnackbarMessage
+          : depthSnackbarMessage as String?,
+      depthSnackbarVersion: depthSnackbarVersion ?? this.depthSnackbarVersion,
     );
   }
 
@@ -492,6 +504,14 @@ class HomeNotifier extends Notifier<HomeState> {
           ? null
           : 'Depth $requestedDepth is heavy for this class. '
                 'Using depth $effectiveDepth to prevent freeze.',
+      depthSnackbarMessage:
+          requestedDepth == fullLoadDepth && effectiveDepth != fullLoadDepth
+          ? 'Full depth for $className is limited to depth $effectiveDepth for performance.'
+          : null,
+      depthSnackbarVersion:
+          requestedDepth == fullLoadDepth && effectiveDepth != fullLoadDepth
+          ? state.depthSnackbarVersion + 1
+          : state.depthSnackbarVersion,
     );
     final int token = ++_activeLoadToken;
     _loadClassPage(
@@ -499,6 +519,13 @@ class HomeNotifier extends Notifier<HomeState> {
       pageStart: state.normalizedPageStart,
       token: token,
     );
+  }
+
+  void clearDepthSnackbarMessage() {
+    if (state.depthSnackbarMessage == null) {
+      return;
+    }
+    state = state.copyWith(depthSnackbarMessage: null);
   }
 
   int _classCountByName(String className) {
