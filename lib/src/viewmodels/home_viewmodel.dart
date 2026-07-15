@@ -562,6 +562,7 @@ class HomeNotifier extends Notifier<HomeState> {
   Future<void> exportClassFullDepthToJson({
     required String className,
     required String outputPath,
+    bool prettyJson = true,
   }) async {
     if (state.isExportingClassJson ?? false) {
       return;
@@ -606,10 +607,19 @@ class HomeNotifier extends Notifier<HomeState> {
         }
 
         for (final Map<String, dynamic> row in chunk) {
-          if (!first) {
-            await raf.writeString(',');
+          if (prettyJson) {
+            if (first) {
+              await raf.writeString('\n');
+            } else {
+              await raf.writeString(',\n');
+            }
+            await raf.writeString(_indentMultiline(_safePrettyJsonEncode(row)));
+          } else {
+            if (!first) {
+              await raf.writeString(',');
+            }
+            await raf.writeString(_safeJsonEncode(row));
           }
-          await raf.writeString(_safeJsonEncode(row));
           first = false;
         }
 
@@ -634,6 +644,9 @@ class HomeNotifier extends Notifier<HomeState> {
         await Future<void>.delayed(Duration.zero);
       }
 
+      if (prettyJson && !first) {
+        await raf.writeString('\n');
+      }
       await raf.writeString(']');
       await raf.flush();
       await raf.close();
@@ -643,7 +656,9 @@ class HomeNotifier extends Notifier<HomeState> {
         isExportingClassJson: false,
         exportClassJsonProgress: 1,
         exportClassJsonStatus: 'Export complete: $className',
-        exportSnackbarMessage: 'Saved full-depth JSON for $className',
+        exportSnackbarMessage: prettyJson
+            ? 'Saved pretty full-depth JSON for $className'
+            : 'Saved full-depth JSON for $className',
         exportSnackbarVersion: (state.exportSnackbarVersion ?? 0) + 1,
       );
     } on FileSystemException catch (e) {
@@ -915,6 +930,15 @@ String _fileNameFromPath(String path) {
 
 String _safeJsonEncode(Object? value) {
   return jsonEncode(_toJsonSafe(value));
+}
+
+String _safePrettyJsonEncode(Object? value) {
+  return const JsonEncoder.withIndent('  ').convert(_toJsonSafe(value));
+}
+
+String _indentMultiline(String input, [String indent = '  ']) {
+  final List<String> lines = input.split('\n');
+  return lines.map((String line) => '$indent$line').join('\n');
 }
 
 Object? _toJsonSafe(Object? value) {
