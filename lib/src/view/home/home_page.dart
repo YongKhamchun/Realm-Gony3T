@@ -16,14 +16,6 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
-  final TextEditingController _queryController = TextEditingController();
-
-  @override
-  void dispose() {
-    _queryController.dispose();
-    super.dispose();
-  }
-
   Future<void> _pickAndOpenRealmFile() async {
     String? filePath;
 
@@ -58,12 +50,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     await ref
         .read(homeProvider.notifier)
         .openRealmFile(filePath.trim(), encryptionKeyInput: encryptionKeyInput);
-
-    _queryController.clear();
   }
 
   void _selectClass(String className) {
-    _queryController.clear();
     ref.read(homeProvider.notifier).selectClass(className);
   }
 
@@ -163,13 +152,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     return result;
   }
 
-  void _runQuery() {
-    ref.read(homeProvider.notifier).runQuery(_queryController.text);
+  void _runQuery(int tabId, String input) {
+    ref.read(homeProvider.notifier).runQueryForTab(tabId, input);
   }
 
-  void _clearQuery() {
-    _queryController.clear();
-    ref.read(homeProvider.notifier).clearQuery();
+  void _clearQuery(int tabId) {
+    ref.read(homeProvider.notifier).clearQueryForTab(tabId);
+  }
+
+  void _activateTabQuery(int tabId, String queryText) {
+    final String normalized = queryText.trim();
+    ref.read(homeProvider.notifier).activateQueryTab(tabId, normalized);
   }
 
   Future<String?> _showSaveJsonPathInputDialog({
@@ -306,9 +299,9 @@ class _HomePageState extends ConsumerState<HomePage> {
             elevation: 2,
             color: theme.colorScheme.surface,
             child: HomeQueryPanel(
-              controller: _queryController,
               onRunQuery: _runQuery,
               onClearQuery: _clearQuery,
+              onActivateTabQuery: _activateTabQuery,
               onOpenFile: _pickAndOpenRealmFile,
               onOpenSettings: () {
                 Navigator.pushNamed(context, SettingPage.routeName);

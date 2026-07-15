@@ -301,6 +301,9 @@ class HomeNotifier extends Notifier<HomeState> {
   static const int _safeDepthForLargeClass = 7;
   static const int _safeDepthForVeryLargeClass = 5;
   int _activeLoadToken = 0;
+  int _activeQueryTabId = 1;
+  final Map<int, _QueryTabSnapshot> _queryTabSnapshots =
+      <int, _QueryTabSnapshot>{};
 
   @override
   HomeState build() {
@@ -358,6 +361,8 @@ class HomeNotifier extends Notifier<HomeState> {
     }
 
     try {
+      _queryTabSnapshots.clear();
+      _activeQueryTabId = 1;
       state = state.copyWith(isLoadingData: true, loadError: null);
 
       final List<RealmClassSummary> classes = _repository.openAndListClasses(
@@ -403,6 +408,8 @@ class HomeNotifier extends Notifier<HomeState> {
 
   Future<void> selectClass(String className) async {
     try {
+      _queryTabSnapshots.clear();
+      _activeQueryTabId = 1;
       state = state.copyWith(
         documents: const <Map<String, dynamic>>[],
         pageStart: 0,
@@ -705,6 +712,49 @@ class HomeNotifier extends Notifier<HomeState> {
     return -1;
   }
 
+  void activateQueryTab(int tabId, String queryText) {
+    if (_activeQueryTabId != tabId) {
+      _saveSnapshotForTab(_activeQueryTabId);
+      _activeQueryTabId = tabId;
+    }
+
+    final _QueryTabSnapshot? snapshot = _queryTabSnapshots[tabId];
+    if (snapshot != null) {
+      state = state.copyWith(
+        documents: snapshot.documents,
+        query: snapshot.query,
+        pageStart: snapshot.pageStart,
+        selectedIndex: snapshot.selectedIndex,
+        queryValidationError: snapshot.queryValidationError,
+        isLoadingData: false,
+      );
+      return;
+    }
+
+    if (queryText.trim().isEmpty) {
+      clearQuery();
+      return;
+    }
+
+    runQuery(queryText);
+  }
+
+  void runQueryForTab(int tabId, String query) {
+    if (_activeQueryTabId != tabId) {
+      _saveSnapshotForTab(_activeQueryTabId);
+      _activeQueryTabId = tabId;
+    }
+    runQuery(query);
+  }
+
+  void clearQueryForTab(int tabId) {
+    if (_activeQueryTabId != tabId) {
+      _saveSnapshotForTab(_activeQueryTabId);
+      _activeQueryTabId = tabId;
+    }
+    clearQuery();
+  }
+
   void runQuery(String query) {
     final String normalized = query.trim();
     if (normalized.isEmpty) {
@@ -714,6 +764,7 @@ class HomeNotifier extends Notifier<HomeState> {
         pageStart: 0,
         selectedIndex: 0,
       );
+      _saveSnapshotForTab(_activeQueryTabId);
       return;
     }
 
@@ -724,6 +775,7 @@ class HomeNotifier extends Notifier<HomeState> {
         pageStart: 0,
         selectedIndex: 0,
       );
+      _saveSnapshotForTab(_activeQueryTabId);
       return;
     }
 
@@ -779,6 +831,7 @@ class HomeNotifier extends Notifier<HomeState> {
           loadError: null,
           isLoadingData: false,
         );
+        _saveSnapshotForTab(_activeQueryTabId);
 
         debugPrint(
           '[HomeNotifier][query] class=$className loadedAll=${loaded.length} '
@@ -804,6 +857,7 @@ class HomeNotifier extends Notifier<HomeState> {
       pageStart: 0,
       selectedIndex: 0,
     );
+    _saveSnapshotForTab(_activeQueryTabId);
   }
 
   void goPrevPage() {
@@ -863,7 +917,18 @@ class HomeNotifier extends Notifier<HomeState> {
         selectedIndex: 0,
         isLoadingData: false,
       );
+      _saveSnapshotForTab(_activeQueryTabId);
     });
+  }
+
+  void _saveSnapshotForTab(int tabId) {
+    _queryTabSnapshots[tabId] = _QueryTabSnapshot(
+      documents: List<Map<String, dynamic>>.unmodifiable(state.documents),
+      query: state.query,
+      pageStart: state.pageStart,
+      selectedIndex: state.selectedIndex,
+      queryValidationError: state.queryValidationError,
+    );
   }
 
   int _resolveSafeDepthForClass({
@@ -916,6 +981,22 @@ class HomeNotifier extends Notifier<HomeState> {
     }
     return HomeState.pageSize;
   }
+}
+
+class _QueryTabSnapshot {
+  const _QueryTabSnapshot({
+    required this.documents,
+    required this.query,
+    required this.pageStart,
+    required this.selectedIndex,
+    required this.queryValidationError,
+  });
+
+  final List<Map<String, dynamic>> documents;
+  final String query;
+  final int pageStart;
+  final int selectedIndex;
+  final String? queryValidationError;
 }
 
 const Object _noChange = Object();
