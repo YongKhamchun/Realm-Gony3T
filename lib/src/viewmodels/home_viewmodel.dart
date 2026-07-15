@@ -189,6 +189,10 @@ class HomeState {
   }
 
   List<Map<String, dynamic>> get pagedDocuments {
+    if (query.trim().isEmpty) {
+      return documents;
+    }
+
     final List<Map<String, dynamic>> filtered = filteredDocuments;
     if (filtered.isEmpty) {
       return const <Map<String, dynamic>>[];
@@ -249,6 +253,10 @@ class HomeNotifier extends Notifier<HomeState> {
   static const int minLoadDepth = 1;
   static const int defaultLoadDepth = 3;
   static const int maxLoadDepth = 20;
+  static const int _largeClassThreshold = 200;
+  static const int _veryLargeClassThreshold = 500;
+  static const int _safeDepthForLargeClass = 7;
+  static const int _safeDepthForVeryLargeClass = 5;
   int _activeLoadToken = 0;
 
   @override
@@ -389,12 +397,14 @@ class HomeNotifier extends Notifier<HomeState> {
 
     final Stopwatch watch = Stopwatch()..start();
     try {
-      final List<Map<String, dynamic>> loaded = _repository.readClassDocuments(
-        className,
-        offset: pageStart,
-        limit: HomeState.pageSize,
-        maxDepth: state.loadDepth == fullLoadDepth ? null : state.loadDepth,
-      );
+      final List<Map<String, dynamic>> loaded = await _repository
+          .readClassDocumentsAsync(
+            className,
+            offset: pageStart,
+            limit: HomeState.pageSize,
+            maxDepth: state.loadDepth == fullLoadDepth ? null : state.loadDepth,
+            yieldEvery: _yieldEveryForDepth(state.loadDepth),
+          );
       watch.stop();
 
       if (token != _activeLoadToken) {
@@ -435,14 +445,25 @@ class HomeNotifier extends Notifier<HomeState> {
       return;
     }
 
-    final int normalizedDepth = depth == fullLoadDepth
+    final int requestedDepth = depth == fullLoadDepth
         ? fullLoadDepth
         : depth.clamp(minLoadDepth, maxLoadDepth);
-    if (state.loadDepth == normalizedDepth) {
+    final int effectiveDepth = _resolveSafeDepthForClass(
+      className: className,
+      requestedDepth: requestedDepth,
+    );
+
+    if (state.loadDepth == effectiveDepth) {
       return;
     }
 
-    state = state.copyWith(loadDepth: normalizedDepth);
+    state = state.copyWith(
+      loadDepth: effectiveDepth,
+      loadError: requestedDepth == effectiveDepth
+          ? null
+          : 'Depth $requestedDepth is heavy for this class. '
+                'Using depth $effectiveDepth to prevent freeze.',
+    );
     final int token = ++_activeLoadToken;
     _loadClassPage(
       className,
@@ -510,14 +531,15 @@ class HomeNotifier extends Notifier<HomeState> {
       final Stopwatch watch = Stopwatch()..start();
 
       try {
-        final List<Map<String, dynamic>> loaded = _repository
-            .readClassDocuments(
+        final List<Map<String, dynamic>> loaded = await _repository
+            .readClassDocumentsAsync(
               className,
               offset: 0,
               limit: null,
               maxDepth: state.loadDepth == fullLoadDepth
                   ? null
                   : state.loadDepth,
+              yieldEvery: _yieldEveryForDepth(state.loadDepth),
             );
         watch.stop();
 
@@ -618,6 +640,44 @@ class HomeNotifier extends Notifier<HomeState> {
         isLoadingData: false,
       );
     });
+  }
+
+  int _resolveSafeDepthForClass({
+    required String className,
+    required int requestedDepth,
+  }) {
+    final int count = _classCountByName(className);
+    if (count <= 0) {
+      return requestedDepth;
+    }
+
+    if (count >= _veryLargeClassThreshold) {
+      if (requestedDepth == fullLoadDepth ||
+          requestedDepth > _safeDepthForVeryLargeClass) {
+        return _safeDepthForVeryLargeClass;
+      }
+      return requestedDepth;
+    }
+
+    if (count >= _largeClassThreshold) {
+      if (requestedDepth == fullLoadDepth ||
+          requestedDepth > _safeDepthForLargeClass) {
+        return _safeDepthForLargeClass;
+      }
+      return requestedDepth;
+    }
+
+    return requestedDepth;
+  }
+
+  int _yieldEveryForDepth(int depth) {
+    if (depth == fullLoadDepth || depth >= 7) {
+      return 1;
+    }
+    if (depth >= 5) {
+      return 2;
+    }
+    return 4;
   }
 }
 

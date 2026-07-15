@@ -224,6 +224,45 @@ class RealmUserRepository {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> readClassDocumentsAsync(
+    String className, {
+    int offset = 0,
+    int? limit,
+    int? maxDepth,
+    int yieldEvery = 1,
+  }) async {
+    final Realm? realm = _realm;
+    if (realm == null) {
+      throw Exception('No realm file is currently opened.');
+    }
+
+    if (offset < 0) {
+      offset = 0;
+    }
+
+    _openedSchemaName = className;
+    final RealmResults<RealmObject> rows = realm.dynamic.all(className);
+    Iterable<RealmObject> segment = rows.skip(offset);
+    if (limit != null && limit > 0) {
+      segment = segment.take(limit);
+    }
+
+    final List<Map<String, dynamic>> output = <Map<String, dynamic>>[];
+    int index = 0;
+    final int safeYieldEvery = yieldEvery <= 0 ? 1 : yieldEvery;
+
+    for (final RealmObject object in segment) {
+      output.add(_toMap(object, maxDepth: maxDepth));
+      index++;
+
+      if (index % safeYieldEvery == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    return List<Map<String, dynamic>>.unmodifiable(output);
+  }
+
   List<int>? _parseEncryptionKey(String? rawInput) {
     final String input = rawInput?.trim() ?? '';
     if (input.isEmpty) {
