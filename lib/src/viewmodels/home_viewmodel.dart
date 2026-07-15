@@ -24,9 +24,14 @@ class HomeState {
     required this.isLoadingData,
     required this.queryValidationError,
     required this.depthSnackbarVersion,
+    this.isExportingClassJson,
+    this.exportClassJsonProgress,
+    this.exportSnackbarVersion,
     this.openedSchemaName,
     this.loadError,
     this.depthSnackbarMessage,
+    this.exportClassJsonStatus,
+    this.exportSnackbarMessage,
   });
 
   factory HomeState.initial() {
@@ -60,9 +65,14 @@ class HomeState {
       isLoadingData: false,
       queryValidationError: null,
       depthSnackbarVersion: 0,
+      isExportingClassJson: false,
+      exportClassJsonProgress: 0,
+      exportSnackbarVersion: 0,
       openedSchemaName: null,
       loadError: null,
       depthSnackbarMessage: null,
+      exportClassJsonStatus: null,
+      exportSnackbarMessage: null,
     );
   }
 
@@ -85,6 +95,11 @@ class HomeState {
   final String? queryValidationError;
   final String? depthSnackbarMessage;
   final int depthSnackbarVersion;
+  final bool? isExportingClassJson;
+  final double? exportClassJsonProgress;
+  final String? exportClassJsonStatus;
+  final String? exportSnackbarMessage;
+  final int? exportSnackbarVersion;
 
   HomeState copyWith({
     List<Map<String, dynamic>>? documents,
@@ -104,6 +119,11 @@ class HomeState {
     Object? queryValidationError = _noChange,
     Object? depthSnackbarMessage = _noChange,
     int? depthSnackbarVersion,
+    bool? isExportingClassJson,
+    double? exportClassJsonProgress,
+    Object? exportClassJsonStatus = _noChange,
+    Object? exportSnackbarMessage = _noChange,
+    int? exportSnackbarVersion,
   }) {
     return HomeState(
       documents: documents ?? this.documents,
@@ -130,6 +150,17 @@ class HomeState {
           ? this.depthSnackbarMessage
           : depthSnackbarMessage as String?,
       depthSnackbarVersion: depthSnackbarVersion ?? this.depthSnackbarVersion,
+      isExportingClassJson: isExportingClassJson ?? this.isExportingClassJson,
+      exportClassJsonProgress:
+          exportClassJsonProgress ?? this.exportClassJsonProgress,
+      exportClassJsonStatus: identical(exportClassJsonStatus, _noChange)
+          ? this.exportClassJsonStatus
+          : exportClassJsonStatus as String?,
+      exportSnackbarMessage: identical(exportSnackbarMessage, _noChange)
+          ? this.exportSnackbarMessage
+          : exportSnackbarMessage as String?,
+      exportSnackbarVersion:
+          exportSnackbarVersion ?? this.exportSnackbarVersion,
     );
   }
 
@@ -526,6 +557,128 @@ class HomeNotifier extends Notifier<HomeState> {
       return;
     }
     state = state.copyWith(depthSnackbarMessage: null);
+  }
+
+  Future<void> exportClassFullDepthToJson({
+    required String className,
+    required String outputPath,
+  }) async {
+    if (state.isExportingClassJson ?? false) {
+      return;
+    }
+
+    final int total = _classCountByName(className);
+    state = state.copyWith(
+      isExportingClassJson: true,
+      exportClassJsonProgress: 0,
+      exportClassJsonStatus: 'Exporting $className (full depth)...',
+      exportSnackbarMessage: null,
+      loadError: null,
+    );
+
+    RandomAccessFile? raf;
+    try {
+      final File outFile = File(outputPath);
+      if (!outFile.parent.existsSync()) {
+        outFile.parent.createSync(recursive: true);
+      }
+
+      raf = await outFile.open(mode: FileMode.write);
+      await raf.writeString('[');
+
+      const int chunkSize = 5;
+      int offset = 0;
+      int written = 0;
+      bool first = true;
+
+      while (true) {
+        final List<Map<String, dynamic>> chunk = await _repository
+            .readClassDocumentsAsync(
+              className,
+              offset: offset,
+              limit: chunkSize,
+              maxDepth: null,
+              yieldEvery: 1,
+            );
+
+        if (chunk.isEmpty) {
+          break;
+        }
+
+        for (final Map<String, dynamic> row in chunk) {
+          if (!first) {
+            await raf.writeString(',');
+          }
+          await raf.writeString(_safeJsonEncode(row));
+          first = false;
+        }
+
+        written += chunk.length;
+        offset += chunk.length;
+
+        final double progress = total > 0
+            ? (written / total).clamp(0, 1).toDouble()
+            : 0;
+        state = state.copyWith(
+          isExportingClassJson: true,
+          exportClassJsonProgress: progress,
+          exportClassJsonStatus: total > 0
+              ? 'Exporting $className (full depth): $written/$total'
+              : 'Exporting $className (full depth): $written',
+        );
+
+        if (chunk.length < chunkSize) {
+          break;
+        }
+
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await raf.writeString(']');
+      await raf.flush();
+      await raf.close();
+      raf = null;
+
+      state = state.copyWith(
+        isExportingClassJson: false,
+        exportClassJsonProgress: 1,
+        exportClassJsonStatus: 'Export complete: $className',
+        exportSnackbarMessage: 'Saved full-depth JSON for $className',
+        exportSnackbarVersion: (state.exportSnackbarVersion ?? 0) + 1,
+      );
+    } on FileSystemException catch (e) {
+      try {
+        await raf?.close();
+      } catch (_) {}
+      state = state.copyWith(
+        isExportingClassJson: false,
+        exportClassJsonProgress: 0,
+        exportClassJsonStatus: null,
+        loadError: 'Export failed: $className\n$e',
+        exportSnackbarMessage:
+            'Export failed: no write permission for selected path.',
+        exportSnackbarVersion: (state.exportSnackbarVersion ?? 0) + 1,
+      );
+    } catch (e) {
+      try {
+        await raf?.close();
+      } catch (_) {}
+      state = state.copyWith(
+        isExportingClassJson: false,
+        exportClassJsonProgress: 0,
+        exportClassJsonStatus: null,
+        loadError: 'Export failed: $className\n$e',
+        exportSnackbarMessage: 'Export failed for $className',
+        exportSnackbarVersion: (state.exportSnackbarVersion ?? 0) + 1,
+      );
+    }
+  }
+
+  void clearExportSnackbarMessage() {
+    if (state.exportSnackbarMessage == null) {
+      return;
+    }
+    state = state.copyWith(exportSnackbarMessage: null);
   }
 
   int _classCountByName(String className) {

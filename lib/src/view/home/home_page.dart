@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:realm_gony3t/realm_gony3t.dart';
 
@@ -169,22 +172,124 @@ class _HomePageState extends ConsumerState<HomePage> {
     ref.read(homeProvider.notifier).clearQuery();
   }
 
+  Future<String?> _showSaveJsonPathInputDialog({
+    required String className,
+    required String initialPath,
+  }) async {
+    final TextEditingController pathController = TextEditingController(
+      text: initialPath,
+    );
+
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Save JSON for $className'),
+          content: TextField(
+            controller: pathController,
+            decoration: const InputDecoration(
+              hintText: '/path/to/export.json',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(pathController.text),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    pathController.dispose();
+    return result;
+  }
+
+  Future<void> _exportClassFullDepthJson(String className) async {
+    String? outputPath;
+    try {
+      outputPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save full-depth JSON for $className',
+        fileName: '$className-full-depth.json',
+        type: FileType.custom,
+        allowedExtensions: <String>['json'],
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'ENTITLEMENT_REQUIRED_WRITE') {
+        final String homePath = Platform.environment['HOME'] ?? '';
+        final String fallbackBase = homePath.isEmpty
+            ? Directory.systemTemp.path
+            : '$homePath/Downloads';
+        final String fallbackPath = '$fallbackBase/$className-full-depth.json';
+
+        if (!mounted) {
+          return;
+        }
+
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Save dialog needs macOS write entitlement. Enter a path (default is Downloads).',
+              ),
+            ),
+          );
+
+        outputPath = await _showSaveJsonPathInputDialog(
+          className: className,
+          initialPath: fallbackPath,
+        );
+      } else {
+        rethrow;
+      }
+    }
+
+    if (!mounted || outputPath == null || outputPath.trim().isEmpty) {
+      return;
+    }
+
+    await ref
+        .read(homeProvider.notifier)
+        .exportClassFullDepthToJson(
+          className: className,
+          outputPath: outputPath.trim(),
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<HomeState>(homeProvider, (HomeState? previous, HomeState next) {
       if (next.depthSnackbarMessage == null) {
+      } else if (previous?.depthSnackbarVersion != next.depthSnackbarVersion) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(next.depthSnackbarMessage!)));
+
+        ref.read(homeProvider.notifier).clearDepthSnackbarMessage();
+      }
+
+      if (next.exportSnackbarMessage == null) {
         return;
       }
 
-      if (previous?.depthSnackbarVersion == next.depthSnackbarVersion) {
+      if ((previous?.exportSnackbarVersion ?? 0) ==
+          (next.exportSnackbarVersion ?? 0)) {
         return;
       }
 
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(next.depthSnackbarMessage!)));
+        ..showSnackBar(SnackBar(content: Text(next.exportSnackbarMessage!)));
 
-      ref.read(homeProvider.notifier).clearDepthSnackbarMessage();
+      ref.read(homeProvider.notifier).clearExportSnackbarMessage();
     });
 
     final HomeState state = ref.watch(homeProvider);
@@ -242,6 +347,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                         dataSourceLabel: state.dataSourceLabel,
                         schemaName: state.openedSchemaName,
                         onSelectClass: _selectClass,
+                        onExportClassFullDepthJson: _exportClassFullDepthJson,
                       );
                     }
 
@@ -262,6 +368,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                             dataSourceLabel: state.dataSourceLabel,
                             schemaName: state.openedSchemaName,
                             onSelectClass: _selectClass,
+                            onExportClassFullDepthJson:
+                                _exportClassFullDepthJson,
                           ),
                         ),
                         MouseRegion(
@@ -314,17 +422,49 @@ class _HomePageState extends ConsumerState<HomePage> {
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.35,
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: <Widget>[
-                  Text('Results: ${filteredDocs.length}'),
-                  const SizedBox(width: 16),
-                  Text(state.displayRangeLabel),
-                  const SizedBox(width: 16),
-                  Text('Class: ${state.openedSchemaName ?? '-'}'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Text('Results: ${filteredDocs.length}'),
+                      const SizedBox(width: 16),
+                      Text(state.displayRangeLabel),
+                      const SizedBox(width: 16),
+                      Text('Class: ${state.openedSchemaName ?? '-'}'),
+                    ],
+                  ),
+                ),
+                if (state.isExportingClassJson ?? false) ...<Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            state.exportClassJsonStatus ??
+                                'Exporting full-depth JSON...',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${((state.exportClassJsonProgress ?? 0) * 100).toStringAsFixed(0)}%',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  LinearProgressIndicator(
+                    value: (state.exportClassJsonProgress ?? 0).clamp(0, 1),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
         ],

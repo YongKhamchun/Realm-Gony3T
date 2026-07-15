@@ -12,6 +12,7 @@ class HomeMobileBody extends StatelessWidget {
     required this.dataSourceLabel,
     required this.schemaName,
     required this.onSelectClass,
+    required this.onExportClassFullDepthJson,
   });
 
   final List<RealmClassSummary> classes;
@@ -21,6 +22,7 @@ class HomeMobileBody extends StatelessWidget {
   final String dataSourceLabel;
   final String? schemaName;
   final ValueChanged<String> onSelectClass;
+  final Future<void> Function(String className) onExportClassFullDepthJson;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +49,7 @@ class HomeMobileBody extends StatelessWidget {
                   dataSourceLabel: dataSourceLabel,
                   schemaName: schemaName,
                   onSelectClass: onSelectClass,
+                  onExportClassFullDepthJson: onExportClassFullDepthJson,
                 ),
                 HomeJsonView(documents: documents),
                 HomeTableView(documents: documents, columns: tableColumns),
@@ -69,6 +72,7 @@ class HomeTreeLayerPanel extends ConsumerStatefulWidget {
     required this.dataSourceLabel,
     required this.schemaName,
     required this.onSelectClass,
+    required this.onExportClassFullDepthJson,
   });
 
   final List<RealmClassSummary> classes;
@@ -77,6 +81,7 @@ class HomeTreeLayerPanel extends ConsumerStatefulWidget {
   final String dataSourceLabel;
   final String? schemaName;
   final ValueChanged<String> onSelectClass;
+  final Future<void> Function(String className) onExportClassFullDepthJson;
 
   @override
   ConsumerState<HomeTreeLayerPanel> createState() => _HomeTreeLayerPanelState();
@@ -84,6 +89,36 @@ class HomeTreeLayerPanel extends ConsumerStatefulWidget {
 
 class _HomeTreeLayerPanelState extends ConsumerState<HomeTreeLayerPanel> {
   final TextEditingController _classSearchController = TextEditingController();
+
+  Future<void> _showClassContextMenu(
+    BuildContext context,
+    Offset globalPosition,
+    String className,
+  ) async {
+    final String? action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx,
+        globalPosition.dy,
+        globalPosition.dx,
+        globalPosition.dy,
+      ),
+      items: const <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'export_full_json',
+          child: Text('Load JSON File (Full Depth)'),
+        ),
+      ],
+    );
+
+    if (!mounted || action == null) {
+      return;
+    }
+
+    if (action == 'export_full_json') {
+      await widget.onExportClassFullDepthJson(className);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -158,28 +193,40 @@ class _HomeTreeLayerPanelState extends ConsumerState<HomeTreeLayerPanel> {
               const ListTile(dense: true, title: Text('No classes found')),
             ...filteredClasses.map((RealmClassSummary item) {
               final bool isSelected = item.name == selectedClass;
-              return ListTile(
-                dense: true,
-                selected: isSelected,
-                selectedTileColor: selectedColor,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: isSelected
-                      ? BorderSide(color: selectedBorderColor, width: 1.2)
-                      : BorderSide.none,
-                ),
-                title: Text(
-                  item.name,
-                  style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                    color: isSelected ? selectedTextColor : null,
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onSecondaryTapDown: (TapDownDetails details) {
+                  _showClassContextMenu(
+                    context,
+                    details.globalPosition,
+                    item.name,
+                  );
+                },
+                child: ListTile(
+                  dense: true,
+                  selected: isSelected,
+                  selectedTileColor: selectedColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: isSelected
+                        ? BorderSide(color: selectedBorderColor, width: 1.2)
+                        : BorderSide.none,
                   ),
+                  title: Text(
+                    item.name,
+                    style: TextStyle(
+                      fontWeight: isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: isSelected ? selectedTextColor : null,
+                    ),
+                  ),
+                  trailing: HomeCountBadge(
+                    count: item.count,
+                    isSelected: isSelected,
+                  ),
+                  onTap: () => widget.onSelectClass(item.name),
                 ),
-                trailing: HomeCountBadge(
-                  count: item.count,
-                  isSelected: isSelected,
-                ),
-                onTap: () => widget.onSelectClass(item.name),
               );
             }),
           ],
