@@ -220,7 +220,13 @@ class RealmUserRepository {
     }
 
     return segment
-        .map((RealmObject object) => _toMap(object, maxDepth: maxDepth))
+        .map(
+          (RealmObject object) => _toMap(
+            object,
+            maxDepth: maxDepth,
+            traversalBudget: _TraversalBudget(_nodeBudgetForDepth(maxDepth)),
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -252,7 +258,13 @@ class RealmUserRepository {
     final int safeYieldEvery = yieldEvery <= 0 ? 1 : yieldEvery;
 
     for (final RealmObject object in segment) {
-      output.add(_toMap(object, maxDepth: maxDepth));
+      output.add(
+        _toMap(
+          object,
+          maxDepth: maxDepth,
+          traversalBudget: _TraversalBudget(_nodeBudgetForDepth(maxDepth)),
+        ),
+      );
       index++;
 
       if (index % safeYieldEvery == 0) {
@@ -341,31 +353,67 @@ class RealmUserRepository {
     }
   }
 
+  int _nodeBudgetForDepth(int? maxDepth) {
+    if (maxDepth == null) {
+      return 900;
+    }
+    if (maxDepth >= 10) {
+      return 900;
+    }
+    if (maxDepth >= 7) {
+      return 1100;
+    }
+    if (maxDepth >= 5) {
+      return 1400;
+    }
+    return 3000;
+  }
+
   Map<String, dynamic> _toMap(
     RealmObject object, {
     int? maxDepth,
     int depth = 0,
+    Set<int>? activeRefs,
+    _TraversalBudget? traversalBudget,
   }) {
+    final _TraversalBudget budget = traversalBudget ?? _TraversalBudget(6000);
+    if (!budget.tryTake()) {
+      return <String, dynamic>{'_truncated': true, '_reason': 'node_budget'};
+    }
+
+    final Set<int> refs = activeRefs ?? <int>{};
+    final int objectRef = identityHashCode(object);
+    if (refs.contains(objectRef)) {
+      return <String, dynamic>{'_circular': true};
+    }
+
+    refs.add(objectRef);
     final Map<String, dynamic> output = <String, dynamic>{};
-    for (final SchemaProperty prop in object.objectSchema) {
-      try {
-        final String fieldName = prop.mapTo;
-        final dynamic value = _readValue(
-          object,
-          prop,
-          maxDepth: maxDepth,
-          depth: depth,
-        );
-        output[fieldName] = value;
-      } catch (e) {
-        // Gracefully skip fields that cannot be read
-        output[prop.name] = null;
+    try {
+      for (final SchemaProperty prop in object.objectSchema) {
+        try {
+          final String fieldName = prop.mapTo;
+          final dynamic value = _readValue(
+            object,
+            prop,
+            maxDepth: maxDepth,
+            depth: depth,
+            activeRefs: refs,
+            traversalBudget: budget,
+          );
+          output[fieldName] = value;
+        } catch (e) {
+          // Gracefully skip fields that cannot be read
+          output[prop.name] = null;
+        }
       }
+      if (!output.containsKey('_id')) {
+        output['_id'] = '(no primary key)';
+      }
+      return output;
+    } finally {
+      refs.remove(objectRef);
     }
-    if (!output.containsKey('_id')) {
-      output['_id'] = '(no primary key)';
-    }
-    return output;
   }
 
   dynamic _readValue(
@@ -373,19 +421,32 @@ class RealmUserRepository {
     SchemaProperty prop, {
     int? maxDepth,
     required int depth,
+    required Set<int> activeRefs,
+    required _TraversalBudget traversalBudget,
   }) {
     try {
       switch (prop.collectionType) {
         case RealmCollectionType.none:
           final dynamic val = object.dynamic.get<Object?>(prop.name);
-          return _normalizeValue(val, maxDepth: maxDepth, depth: depth + 1);
+          return _normalizeValue(
+            val,
+            maxDepth: maxDepth,
+            depth: depth + 1,
+            activeRefs: activeRefs,
+            traversalBudget: traversalBudget,
+          );
         case RealmCollectionType.list:
           try {
             return object.dynamic
                 .getList<Object?>(prop.name)
                 .map(
-                  (Object? e) =>
-                      _normalizeValue(e, maxDepth: maxDepth, depth: depth + 1),
+                  (Object? e) => _normalizeValue(
+                    e,
+                    maxDepth: maxDepth,
+                    depth: depth + 1,
+                    activeRefs: activeRefs,
+                    traversalBudget: traversalBudget,
+                  ),
                 )
                 .toList(growable: false);
           } catch (_) {
@@ -402,6 +463,8 @@ class RealmUserRepository {
                       value,
                       maxDepth: maxDepth,
                       depth: depth + 1,
+                      activeRefs: activeRefs,
+                      traversalBudget: traversalBudget,
                     ),
                   ),
                 )
@@ -414,8 +477,13 @@ class RealmUserRepository {
             return object.dynamic
                 .getSet<Object?>(prop.name)
                 .map(
-                  (Object? e) =>
-                      _normalizeValue(e, maxDepth: maxDepth, depth: depth + 1),
+                  (Object? e) => _normalizeValue(
+                    e,
+                    maxDepth: maxDepth,
+                    depth: depth + 1,
+                    activeRefs: activeRefs,
+                    traversalBudget: traversalBudget,
+                  ),
                 )
                 .toList(growable: false);
           } catch (_) {
@@ -426,6 +494,8 @@ class RealmUserRepository {
             object.dynamic.get<Object?>(prop.name),
             maxDepth: maxDepth,
             depth: depth + 1,
+            activeRefs: activeRefs,
+            traversalBudget: traversalBudget,
           );
       }
     } catch (_) {
@@ -433,7 +503,13 @@ class RealmUserRepository {
     }
   }
 
-  dynamic _normalizeValue(Object? value, {int? maxDepth, required int depth}) {
+  dynamic _normalizeValue(
+    Object? value, {
+    int? maxDepth,
+    required int depth,
+    required Set<int> activeRefs,
+    required _TraversalBudget traversalBudget,
+  }) {
     if (maxDepth != null && depth > maxDepth) {
       if (value is RealmObject || value is EmbeddedObject) {
         return <String, dynamic>{'_truncated': true};
@@ -447,24 +523,62 @@ class RealmUserRepository {
       return value;
     }
 
+    if (value is RealmObject || value is EmbeddedObject) {
+      if (!traversalBudget.tryTake()) {
+        return <String, dynamic>{'_truncated': true, '_reason': 'node_budget'};
+      }
+    }
+
     if (value is RealmObject) {
-      return _toMap(value, maxDepth: maxDepth, depth: depth);
+      return _toMap(
+        value,
+        maxDepth: maxDepth,
+        depth: depth,
+        activeRefs: activeRefs,
+        traversalBudget: traversalBudget,
+      );
     }
     if (value is EmbeddedObject) {
-      final Map<String, dynamic> output = <String, dynamic>{};
-      for (final SchemaProperty prop in value.objectSchema) {
-        try {
-          output[prop.mapTo] = _normalizeValue(
-            value.dynamic.get<Object?>(prop.name),
-            maxDepth: maxDepth,
-            depth: depth + 1,
-          );
-        } catch (_) {
-          output[prop.name] = null;
-        }
+      final int embeddedRef = identityHashCode(value);
+      if (activeRefs.contains(embeddedRef)) {
+        return <String, dynamic>{'_circular': true};
       }
-      return output;
+
+      activeRefs.add(embeddedRef);
+      final Map<String, dynamic> output = <String, dynamic>{};
+      try {
+        for (final SchemaProperty prop in value.objectSchema) {
+          try {
+            output[prop.mapTo] = _normalizeValue(
+              value.dynamic.get<Object?>(prop.name),
+              maxDepth: maxDepth,
+              depth: depth + 1,
+              activeRefs: activeRefs,
+              traversalBudget: traversalBudget,
+            );
+          } catch (_) {
+            output[prop.name] = null;
+          }
+        }
+        return output;
+      } finally {
+        activeRefs.remove(embeddedRef);
+      }
     }
     return value;
+  }
+}
+
+class _TraversalBudget {
+  _TraversalBudget(this.remaining);
+
+  int remaining;
+
+  bool tryTake() {
+    if (remaining <= 0) {
+      return false;
+    }
+    remaining--;
+    return true;
   }
 }

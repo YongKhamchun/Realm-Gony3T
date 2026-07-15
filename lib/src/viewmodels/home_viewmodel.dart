@@ -397,14 +397,42 @@ class HomeNotifier extends Notifier<HomeState> {
 
     final Stopwatch watch = Stopwatch()..start();
     try {
-      final List<Map<String, dynamic>> loaded = await _repository
-          .readClassDocumentsAsync(
-            className,
-            offset: pageStart,
-            limit: HomeState.pageSize,
-            maxDepth: state.loadDepth == fullLoadDepth ? null : state.loadDepth,
-            yieldEvery: _yieldEveryForDepth(state.loadDepth),
-          );
+      final int batchSize = _batchSizeForDepth(state.loadDepth);
+      final List<Map<String, dynamic>> loaded = <Map<String, dynamic>>[];
+      int offset = pageStart;
+
+      while (loaded.length < HomeState.pageSize) {
+        final int remaining = HomeState.pageSize - loaded.length;
+        final int limit = remaining < batchSize ? remaining : batchSize;
+
+        final List<Map<String, dynamic>> chunk = await _repository
+            .readClassDocumentsAsync(
+              className,
+              offset: offset,
+              limit: limit,
+              maxDepth: state.loadDepth == fullLoadDepth
+                  ? null
+                  : state.loadDepth,
+              yieldEvery: _yieldEveryForDepth(state.loadDepth),
+            );
+
+        if (token != _activeLoadToken) {
+          return;
+        }
+
+        if (chunk.isEmpty) {
+          break;
+        }
+
+        loaded.addAll(chunk);
+        offset += chunk.length;
+
+        if (chunk.length < limit) {
+          break;
+        }
+
+        await Future<void>.delayed(Duration.zero);
+      }
       watch.stop();
 
       if (token != _activeLoadToken) {
@@ -425,6 +453,7 @@ class HomeNotifier extends Notifier<HomeState> {
       debugPrint(
         '[HomeNotifier] class=$className pageStart=$pageStart loaded=${loaded.length} '
         'depth=${state.loadDepth == fullLoadDepth ? 'full' : state.loadDepth} '
+        'batchSize=$batchSize '
         'expected=${_classCountByName(className)} '
         'elapsed=${watch.elapsedMilliseconds}ms',
       );
@@ -675,9 +704,22 @@ class HomeNotifier extends Notifier<HomeState> {
       return 1;
     }
     if (depth >= 5) {
-      return 2;
+      return 1;
     }
     return 4;
+  }
+
+  int _batchSizeForDepth(int depth) {
+    if (depth == fullLoadDepth || depth >= 10) {
+      return 3;
+    }
+    if (depth >= 7) {
+      return 5;
+    }
+    if (depth >= 5) {
+      return 8;
+    }
+    return HomeState.pageSize;
   }
 }
 
