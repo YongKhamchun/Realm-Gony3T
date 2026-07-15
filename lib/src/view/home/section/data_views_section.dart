@@ -128,152 +128,262 @@ class HomeDataViewsPanel extends ConsumerWidget {
     return DefaultTabController(
       initialIndex: 1,
       length: 3,
-      child: Stack(
-        children: <Widget>[
-          Column(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool isCompact = constraints.maxWidth < 980;
+
+          return Stack(
             children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                child: Row(
-                  children: <Widget>[
-                    Text(
-                      displayRangeLabel,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const Spacer(),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context).dividerColor,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: SizedBox(
-                        height: 30,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<int>(
-                              value: currentDepth,
-                              isDense: true,
-                              onChanged: isLoading
-                                  ? null
-                                  : (int? value) {
-                                      if (value == null) {
-                                        return;
-                                      }
-                                      onSelectDepth(value);
-                                    },
-                              items: depthOptions
-                                  .map(
-                                    (int depth) => DropdownMenuItem<int>(
-                                      value: depth,
-                                      child: Text(
-                                        depth < 0
-                                            ? 'Depth Full'
-                                            : 'Depth $depth',
+              Column(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    child: isCompact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                displayRangeLabel,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: <Widget>[
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Theme.of(context).dividerColor,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: SizedBox(
+                                      height: 30,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<int>(
+                                            value: currentDepth,
+                                            isDense: true,
+                                            onChanged: isLoading
+                                                ? null
+                                                : (int? value) {
+                                                    if (value == null) {
+                                                      return;
+                                                    }
+                                                    onSelectDepth(value);
+                                                  },
+                                            items: depthOptions
+                                                .map(
+                                                  (int depth) =>
+                                                      DropdownMenuItem<int>(
+                                                        value: depth,
+                                                        child: Text(
+                                                          depth < 0
+                                                              ? 'Depth Full'
+                                                              : 'Depth $depth',
+                                                        ),
+                                                      ),
+                                                )
+                                                .toList(growable: false),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: isLoading || !canPrev ? null : onPrev,
-                      child: const Text('Prev'),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: isLoading || !canNext ? null : onNext,
-                      child: const Text('Next'),
-                    ),
-                    const SizedBox(width: 12),
-                    TabBar(
-                      isScrollable: true,
-                      onTap: (int index) {
-                        ref
-                            .read(_dataViewTabIndexProvider.notifier)
-                            .select(index);
-                        ref
-                            .read(_loadedDataTabsProvider.notifier)
-                            .markLoaded(index);
-                      },
-                      tabs: <Tab>[
-                        Tab(text: 'JSON'),
-                        Tab(text: 'Table'),
-                        Tab(text: 'Inspector'),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: IndexedStack(
-                  index: activeTabIndex,
-                  children: <Widget>[
-                    loadedTabs.contains(0)
-                        ? HomeJsonView(
-                            key: const PageStorageKey<String>('home-data-json'),
-                            documents: documents,
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: isLoading || !canPrev
+                                        ? null
+                                        : onPrev,
+                                    child: const Text('Prev'),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: isLoading || !canNext
+                                        ? null
+                                        : onNext,
+                                    child: const Text('Next'),
+                                  ),
+                                  TabBar(
+                                    isScrollable: true,
+                                    onTap: (int index) {
+                                      ref
+                                          .read(
+                                            _dataViewTabIndexProvider.notifier,
+                                          )
+                                          .select(index);
+                                      ref
+                                          .read(
+                                            _loadedDataTabsProvider.notifier,
+                                          )
+                                          .markLoaded(index);
+                                    },
+                                    tabs: <Tab>[
+                                      Tab(text: 'JSON'),
+                                      Tab(text: 'Table'),
+                                      Tab(text: 'Inspector'),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ],
                           )
-                        : const _DeferredTabPlaceholder(
-                            label: 'Open JSON tab to load records',
+                        : Row(
+                            children: <Widget>[
+                              Text(
+                                displayRangeLabel,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const Spacer(),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: Theme.of(context).dividerColor,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: SizedBox(
+                                  height: 30,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<int>(
+                                        value: currentDepth,
+                                        isDense: true,
+                                        onChanged: isLoading
+                                            ? null
+                                            : (int? value) {
+                                                if (value == null) {
+                                                  return;
+                                                }
+                                                onSelectDepth(value);
+                                              },
+                                        items: depthOptions
+                                            .map(
+                                              (int depth) =>
+                                                  DropdownMenuItem<int>(
+                                                    value: depth,
+                                                    child: Text(
+                                                      depth < 0
+                                                          ? 'Depth Full'
+                                                          : 'Depth $depth',
+                                                    ),
+                                                  ),
+                                            )
+                                            .toList(growable: false),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton(
+                                onPressed: isLoading || !canPrev
+                                    ? null
+                                    : onPrev,
+                                child: const Text('Prev'),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton(
+                                onPressed: isLoading || !canNext
+                                    ? null
+                                    : onNext,
+                                child: const Text('Next'),
+                              ),
+                              const SizedBox(width: 12),
+                              TabBar(
+                                isScrollable: true,
+                                onTap: (int index) {
+                                  ref
+                                      .read(_dataViewTabIndexProvider.notifier)
+                                      .select(index);
+                                  ref
+                                      .read(_loadedDataTabsProvider.notifier)
+                                      .markLoaded(index);
+                                },
+                                tabs: <Tab>[
+                                  Tab(text: 'JSON'),
+                                  Tab(text: 'Table'),
+                                  Tab(text: 'Inspector'),
+                                ],
+                              ),
+                            ],
                           ),
-                    loadedTabs.contains(1)
-                        ? HomeTableView(
-                            key: const PageStorageKey<String>(
-                              'home-data-table',
-                            ),
-                            documents: documents,
-                            columns: tableColumns,
-                          )
-                        : const _DeferredTabPlaceholder(
-                            label: 'Open Table tab to load records',
-                          ),
-                    loadedTabs.contains(2)
-                        ? HomeInspectorView(
-                            key: const PageStorageKey<String>(
-                              'home-data-inspector',
-                            ),
-                            documents: documents,
-                          )
-                        : const _DeferredTabPlaceholder(
-                            label: 'Open Inspector tab to inspect tree',
-                          ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isLoading)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.surface.withValues(alpha: 0.55),
-                  child: const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                  ),
+                  Expanded(
+                    child: IndexedStack(
+                      index: activeTabIndex,
                       children: <Widget>[
-                        SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 2.4),
-                        ),
-                        SizedBox(height: 10),
-                        Text('Loading data...'),
+                        loadedTabs.contains(0)
+                            ? HomeJsonView(
+                                key: const PageStorageKey<String>(
+                                  'home-data-json',
+                                ),
+                                documents: documents,
+                              )
+                            : const _DeferredTabPlaceholder(
+                                label: 'Open JSON tab to load records',
+                              ),
+                        loadedTabs.contains(1)
+                            ? HomeTableView(
+                                key: const PageStorageKey<String>(
+                                  'home-data-table',
+                                ),
+                                documents: documents,
+                                columns: tableColumns,
+                              )
+                            : const _DeferredTabPlaceholder(
+                                label: 'Open Table tab to load records',
+                              ),
+                        loadedTabs.contains(2)
+                            ? HomeInspectorView(
+                                key: const PageStorageKey<String>(
+                                  'home-data-inspector',
+                                ),
+                                documents: documents,
+                              )
+                            : const _DeferredTabPlaceholder(
+                                label: 'Open Inspector tab to inspect tree',
+                              ),
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
-            ),
-        ],
+              if (isLoading)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.55),
+                      child: const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                              ),
+                            ),
+                            SizedBox(height: 10),
+                            Text('Loading data...'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
