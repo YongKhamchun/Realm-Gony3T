@@ -1013,22 +1013,105 @@ bool _matchesClause(Map<String, dynamic> doc, String clause) {
 }
 
 dynamic _readQueryPath(Map<String, dynamic> doc, String path) {
-  final List<String> parts = path.split('.');
-  dynamic current = doc;
-
-  for (final String part in parts) {
-    if (current is Map<String, dynamic>) {
-      current = current[part];
-      continue;
-    }
-
+  final List<String> parts = path
+      .split('.')
+      .where((String p) => p.trim().isNotEmpty)
+      .toList(growable: false);
+  if (parts.isEmpty) {
     return null;
   }
 
-  return current;
+  final List<dynamic> values = _extractQueryPathValues(doc, parts, 0);
+  if (values.isEmpty) {
+    return null;
+  }
+  if (values.length == 1) {
+    return values.first;
+  }
+  return values;
+}
+
+List<dynamic> _extractQueryPathValues(
+  dynamic current,
+  List<String> parts,
+  int index,
+) {
+  if (index >= parts.length) {
+    return <dynamic>[current];
+  }
+
+  if (current == null) {
+    return const <dynamic>[];
+  }
+
+  final String rawPart = parts[index];
+  final _QueryPathSegment segment = _parseQueryPathSegment(rawPart);
+
+  dynamic next;
+  if (current is Map<String, dynamic>) {
+    next = current[segment.key];
+  } else if (current is Map) {
+    next = current[segment.key];
+  } else if (current is List) {
+    final List<dynamic> aggregated = <dynamic>[];
+    for (final dynamic item in current) {
+      aggregated.addAll(_extractQueryPathValues(item, parts, index));
+    }
+    return aggregated;
+  } else {
+    return const <dynamic>[];
+  }
+
+  if (next == null) {
+    return const <dynamic>[];
+  }
+
+  dynamic resolved = next;
+  for (final int listIndex in segment.indices) {
+    if (resolved is List && listIndex >= 0 && listIndex < resolved.length) {
+      resolved = resolved[listIndex];
+      continue;
+    }
+    return const <dynamic>[];
+  }
+
+  return _extractQueryPathValues(resolved, parts, index + 1);
+}
+
+_QueryPathSegment _parseQueryPathSegment(String part) {
+  final Match? match = RegExp(r'^([^\[]+)((?:\[\d+\])*)$').firstMatch(part);
+  if (match == null) {
+    return _QueryPathSegment(key: part, indices: const <int>[]);
+  }
+
+  final String key = match.group(1) ?? part;
+  final String indexPart = match.group(2) ?? '';
+  final Iterable<Match> indexMatches = RegExp(
+    r'\[(\d+)\]',
+  ).allMatches(indexPart);
+  final List<int> indices = indexMatches
+      .map((Match m) => int.parse(m.group(1)!))
+      .toList(growable: false);
+  return _QueryPathSegment(key: key, indices: indices);
+}
+
+class _QueryPathSegment {
+  const _QueryPathSegment({required this.key, required this.indices});
+
+  final String key;
+  final List<int> indices;
 }
 
 bool _matchesQueryOperator(dynamic actual, String op, String rawExpected) {
+  if (actual is Iterable && actual is! String) {
+    for (final dynamic item in actual) {
+      if (_matchesQueryOperator(item, op, rawExpected)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   final String expectedLower = rawExpected.toLowerCase();
   final String actualText = (actual ?? 'null').toString();
   final String actualLower = actualText.toLowerCase();

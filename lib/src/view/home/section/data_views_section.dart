@@ -757,6 +757,12 @@ class HomeInspectorView extends ConsumerStatefulWidget {
 }
 
 class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
+  static const double _minInspectorKeyWidth = 110;
+  static const double _maxInspectorKeyWidth = 460;
+  double _inspectorKeyWidth = 150;
+  bool _isResizingKeyColumn = false;
+  double _lastResizeDx = 0;
+
   @override
   void initState() {
     super.initState();
@@ -783,6 +789,31 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
     });
   }
 
+  void _startResize(PointerDownEvent event) {
+    _isResizingKeyColumn = true;
+    _lastResizeDx = event.position.dx;
+  }
+
+  void _resizeKeyColumn(PointerMoveEvent event) {
+    if (!_isResizingKeyColumn) {
+      return;
+    }
+
+    final double delta = event.position.dx - _lastResizeDx;
+    _lastResizeDx = event.position.dx;
+
+    setState(() {
+      _inspectorKeyWidth = (_inspectorKeyWidth + delta).clamp(
+        _minInspectorKeyWidth,
+        _maxInspectorKeyWidth,
+      );
+    });
+  }
+
+  void _stopResize(_) {
+    _isResizingKeyColumn = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.documents.isEmpty) {
@@ -797,13 +828,39 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
               bottom: BorderSide(color: Theme.of(context).dividerColor),
             ),
           ),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: <Widget>[
-                SizedBox(width: 150, child: Text('Key')),
-                Expanded(child: Text('Value')),
-                SizedBox(width: 90, child: Text('Type')),
+                SizedBox(width: _inspectorKeyWidth, child: const Text('Key')),
+                MouseRegion(
+                  cursor: SystemMouseCursors.resizeColumn,
+                  child: Listener(
+                    onPointerDown: _startResize,
+                    onPointerMove: _resizeKeyColumn,
+                    onPointerUp: _stopResize,
+                    onPointerCancel: _stopResize,
+                    child: Container(
+                      width: 14,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: Theme.of(context).dividerColor,
+                          ),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.drag_indicator,
+                        size: 12,
+                        color: Theme.of(context).hintColor,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Expanded(child: Text('Value')),
+                const SizedBox(width: 90, child: Text('Type')),
               ],
             ),
           ),
@@ -826,6 +883,7 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
                       value: doc,
                       depth: 0,
                       nodePath: key,
+                      keyColumnWidth: _inspectorKeyWidth,
                     );
                   }, childCount: widget.documents.length),
                 ),
@@ -845,12 +903,14 @@ class HomeInspectorNodeTile extends ConsumerWidget {
     required this.value,
     required this.depth,
     required this.nodePath,
+    required this.keyColumnWidth,
   });
 
   final String keyLabel;
   final dynamic value;
   final int depth;
   final String nodePath;
+  final double keyColumnWidth;
 
   List<Widget> _buildChildren() {
     final dynamic value = this.value;
@@ -865,6 +925,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
             value: childValue,
             depth: depth + 1,
             nodePath: childPath,
+            keyColumnWidth: keyColumnWidth,
           ),
         );
       });
@@ -882,6 +943,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
             value: value[i],
             depth: depth + 1,
             nodePath: childPath,
+            keyColumnWidth: keyColumnWidth,
           ),
         );
       }
@@ -904,6 +966,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
         valueLabel: displayValue(value),
         typeLabel: valueType(value),
         depth: depth,
+        keyColumnWidth: keyColumnWidth,
       );
     }
 
@@ -926,9 +989,10 @@ class HomeInspectorNodeTile extends ConsumerWidget {
       title: Row(
         children: <Widget>[
           SizedBox(
-            width: 150,
+            width: keyColumnWidth,
             child: Text(keyLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
+          const SizedBox(width: 20),
           Expanded(
             child: Text(
               displayValue(value),
@@ -1001,12 +1065,14 @@ class HomeInspectorRow extends StatelessWidget {
     required this.valueLabel,
     required this.typeLabel,
     required this.depth,
+    required this.keyColumnWidth,
   });
 
   final String keyLabel;
   final String valueLabel;
   final String typeLabel;
   final int depth;
+  final double keyColumnWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1015,9 +1081,10 @@ class HomeInspectorRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           SizedBox(
-            width: 150,
+            width: keyColumnWidth,
             child: Text(keyLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
+          const SizedBox(width: 20),
           Expanded(child: Text(valueLabel)),
           SizedBox(width: 90, child: Text(typeLabel)),
         ],
