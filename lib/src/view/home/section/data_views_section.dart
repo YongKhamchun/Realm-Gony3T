@@ -31,7 +31,7 @@ class InspectorTreeExpansionNotifier extends Notifier<Map<String, bool>> {
   }
 }
 
-const int _jsonPreviewLimit = 5;
+const int _jsonPreviewLimit = 1;
 
 final _jsonRawProvider = Provider.family<String, _JsonRenderRequest>((
   Ref ref,
@@ -343,49 +343,51 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                 runSpacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: <Widget>[
-                                  DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: Theme.of(context).dividerColor,
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: SizedBox(
-                                      height: 30,
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
+                                  if (activeTabIndex != 0)
+                                    DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: Theme.of(context).dividerColor,
                                         ),
-                                        child: DropdownButtonHideUnderline(
-                                          child: DropdownButton<int>(
-                                            value: currentDepth,
-                                            isDense: true,
-                                            onChanged: isLoading
-                                                ? null
-                                                : (int? value) {
-                                                    if (value == null) {
-                                                      return;
-                                                    }
-                                                    onSelectDepth(value);
-                                                  },
-                                            items: depthOptions
-                                                .map(
-                                                  (int depth) =>
-                                                      DropdownMenuItem<int>(
-                                                        value: depth,
-                                                        child: Text(
-                                                          depth < 0
-                                                              ? 'Depth Full'
-                                                              : 'Depth $depth',
-                                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: SizedBox(
+                                        height: 30,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          child: DropdownButtonHideUnderline(
+                                            child: DropdownButton<int>(
+                                              value: currentDepth,
+                                              isDense: true,
+                                              onChanged: isLoading
+                                                  ? null
+                                                  : (int? value) {
+                                                      if (value == null) {
+                                                        return;
+                                                      }
+                                                      onSelectDepth(value);
+                                                    },
+                                              items: depthOptions
+                                                  .map(
+                                                    (
+                                                      int depth,
+                                                    ) => DropdownMenuItem<int>(
+                                                      value: depth,
+                                                      child: Text(
+                                                        depth < 0
+                                                            ? 'Depth Full'
+                                                            : 'Depth $depth',
                                                       ),
-                                                )
-                                                .toList(growable: false),
+                                                    ),
+                                                  )
+                                                  .toList(growable: false),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
                                   OutlinedButton(
                                     onPressed: isLoading || !canPrev
                                         ? null
@@ -450,50 +452,51 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                   ],
                                 ),
                               ),
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: Theme.of(context).dividerColor,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: SizedBox(
-                                  height: 30,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
+                              if (activeTabIndex != 0)
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: Theme.of(context).dividerColor,
                                     ),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<int>(
-                                        value: currentDepth,
-                                        isDense: true,
-                                        onChanged: isLoading
-                                            ? null
-                                            : (int? value) {
-                                                if (value == null) {
-                                                  return;
-                                                }
-                                                onSelectDepth(value);
-                                              },
-                                        items: depthOptions
-                                            .map(
-                                              (int depth) =>
-                                                  DropdownMenuItem<int>(
-                                                    value: depth,
-                                                    child: Text(
-                                                      depth < 0
-                                                          ? 'Depth Full'
-                                                          : 'Depth $depth',
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: SizedBox(
+                                    height: 30,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<int>(
+                                          value: currentDepth,
+                                          isDense: true,
+                                          onChanged: isLoading
+                                              ? null
+                                              : (int? value) {
+                                                  if (value == null) {
+                                                    return;
+                                                  }
+                                                  onSelectDepth(value);
+                                                },
+                                          items: depthOptions
+                                              .map(
+                                                (int depth) =>
+                                                    DropdownMenuItem<int>(
+                                                      value: depth,
+                                                      child: Text(
+                                                        depth < 0
+                                                            ? 'Depth Full'
+                                                            : 'Depth $depth',
+                                                      ),
                                                     ),
-                                                  ),
-                                            )
-                                            .toList(growable: false),
+                                              )
+                                              .toList(growable: false),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
+                              if (activeTabIndex != 0) const SizedBox(width: 8),
                               OutlinedButton(
                                 onPressed: isLoading || !canPrev
                                     ? null
