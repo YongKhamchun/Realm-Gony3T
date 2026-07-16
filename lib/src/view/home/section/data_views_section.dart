@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final NotifierProvider<InspectorTreeExpansionNotifier, Map<String, bool>>
@@ -244,7 +246,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
   final bool canNext;
   final VoidCallback onPrev;
   final VoidCallback onNext;
-  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  final Future<Map<String, dynamic>?> Function(int lazyRef, {int depth})
   onResolveLazyObjectRef;
 
   @override
@@ -499,6 +501,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                   'home-data-inspector',
                                 ),
                                 documents: documents,
+                                currentDepth: currentDepth,
                                 onResolveLazyObjectRef: onResolveLazyObjectRef,
                               )
                             : const _DeferredTabPlaceholder(
@@ -566,7 +569,7 @@ class HomeTableView extends ConsumerStatefulWidget {
 
   final List<Map<String, dynamic>> documents;
   final List<String> columns;
-  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  final Future<Map<String, dynamic>?> Function(int lazyRef, {int depth})
   onResolveLazyObjectRef;
 
   @override
@@ -960,10 +963,13 @@ class _TableLayerInlinePath extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: List<Widget>.generate(scopes.length, (int index) {
+    return SizedBox(
+      height: 28,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        physics: const ClampingScrollPhysics(),
+        itemCount: scopes.length,
+        itemBuilder: (BuildContext context, int index) {
           final bool isLast = index == scopes.length - 1;
           return Row(
             children: <Widget>[
@@ -983,7 +989,7 @@ class _TableLayerInlinePath extends StatelessWidget {
                 ),
             ],
           );
-        }),
+        },
       ),
     );
   }
@@ -1245,11 +1251,13 @@ class HomeInspectorView extends ConsumerStatefulWidget {
   const HomeInspectorView({
     super.key,
     required this.documents,
+    required this.currentDepth,
     required this.onResolveLazyObjectRef,
   });
 
   final List<Map<String, dynamic>> documents;
-  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  final int currentDepth;
+  final Future<Map<String, dynamic>?> Function(int lazyRef, {int depth})
   onResolveLazyObjectRef;
 
   @override
@@ -1367,6 +1375,7 @@ class _HomeInspectorViewState extends ConsumerState<HomeInspectorView> {
                       value: doc,
                       depth: 0,
                       nodePath: key,
+                      currentDepth: widget.currentDepth,
                       keyColumnWidth: layout.keyWidth,
                       onResolveLazyObjectRef: widget.onResolveLazyObjectRef,
                     );
@@ -1388,6 +1397,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
     required this.value,
     required this.depth,
     required this.nodePath,
+    required this.currentDepth,
     required this.keyColumnWidth,
     required this.onResolveLazyObjectRef,
   });
@@ -1396,8 +1406,9 @@ class HomeInspectorNodeTile extends ConsumerWidget {
   final dynamic value;
   final int depth;
   final String nodePath;
+  final int currentDepth;
   final double keyColumnWidth;
-  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  final Future<Map<String, dynamic>?> Function(int lazyRef, {int depth})
   onResolveLazyObjectRef;
 
   Future<void> _resolveIfNeeded(
@@ -1466,6 +1477,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
             value: childValue,
             depth: depth + 1,
             nodePath: childPath,
+            currentDepth: currentDepth,
             keyColumnWidth: keyColumnWidth,
             onResolveLazyObjectRef: onResolveLazyObjectRef,
           ),
@@ -1485,6 +1497,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
             value: value[i],
             depth: depth + 1,
             nodePath: childPath,
+            currentDepth: currentDepth,
             keyColumnWidth: keyColumnWidth,
             onResolveLazyObjectRef: onResolveLazyObjectRef,
           ),
@@ -1516,6 +1529,7 @@ class HomeInspectorNodeTile extends ConsumerWidget {
     final bool isMap = currentValue is Map<String, dynamic>;
     final bool isList = currentValue is List<dynamic>;
     final bool isComplex = isMap || isList;
+    final bool canPreviewJson = depth == 0;
 
     if (!isComplex) {
       return HomeInspectorRow(
@@ -1524,6 +1538,27 @@ class HomeInspectorNodeTile extends ConsumerWidget {
         typeLabel: valueType(currentValue),
         depth: depth,
         keyColumnWidth: keyColumnWidth,
+        onPreviewJson: canPreviewJson
+            ? () async {
+                final Map<String, _InspectorNodeResolveState> resolvedNodes =
+                    ref.read(_inspectorNodeResolveProvider);
+                final _PreviewLimits previewLimits = _previewLimitsForDepth(
+                  currentDepth,
+                );
+                final Object? previewSource =
+                    _buildValueWithInspectorResolvedNodes(
+                      currentValue,
+                      nodePath: nodePath,
+                      resolveStates: resolvedNodes,
+                      limits: previewLimits,
+                    );
+                await _showInspectorJsonPreviewModal(
+                  context,
+                  title: 'Row $keyLabel JSON',
+                  sourceValue: previewSource,
+                );
+              }
+            : null,
       );
     }
 
@@ -1560,6 +1595,32 @@ class HomeInspectorNodeTile extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (canPreviewJson)
+            IconButton(
+              tooltip: 'Preview JSON',
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: EdgeInsets.zero,
+              onPressed: () async {
+                final Map<String, _InspectorNodeResolveState> resolvedNodes =
+                    ref.read(_inspectorNodeResolveProvider);
+                final _PreviewLimits previewLimits = _previewLimitsForDepth(
+                  currentDepth,
+                );
+                final Object? previewSource =
+                    _buildValueWithInspectorResolvedNodes(
+                      currentValue,
+                      nodePath: nodePath,
+                      resolveStates: resolvedNodes,
+                      limits: previewLimits,
+                    );
+                await _showInspectorJsonPreviewModal(
+                  context,
+                  title: 'Row $keyLabel JSON',
+                  sourceValue: previewSource,
+                );
+              },
+              icon: const Icon(Icons.data_object, size: 18),
+            ),
           SizedBox(width: 90, child: Text(valueType(currentValue))),
         ],
       ),
@@ -1576,6 +1637,7 @@ class HomeInspectorRow extends StatelessWidget {
     required this.typeLabel,
     required this.depth,
     required this.keyColumnWidth,
+    this.onPreviewJson,
   });
 
   final String keyLabel;
@@ -1583,6 +1645,7 @@ class HomeInspectorRow extends StatelessWidget {
   final String typeLabel;
   final int depth;
   final double keyColumnWidth;
+  final VoidCallback? onPreviewJson;
 
   @override
   Widget build(BuildContext context) {
@@ -1596,11 +1659,246 @@ class HomeInspectorRow extends StatelessWidget {
           ),
           const SizedBox(width: 20),
           Expanded(child: Text(valueLabel)),
+          if (onPreviewJson != null)
+            IconButton(
+              tooltip: 'Preview JSON',
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: EdgeInsets.zero,
+              onPressed: onPreviewJson,
+              icon: const Icon(Icons.data_object, size: 18),
+            ),
           SizedBox(width: 90, child: Text(typeLabel)),
         ],
       ),
     );
   }
+}
+
+Future<void> _showInspectorJsonPreviewModal(
+  BuildContext context, {
+  required String title,
+  required Object? sourceValue,
+}) {
+  bool isPretty = false;
+  Object? previewValue = sourceValue;
+
+  return showDialog<void>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          final String jsonText = isPretty
+              ? _inspectorSafePrettyJsonEncode(previewValue)
+              : _inspectorSafeJsonEncode(previewValue);
+
+          return AlertDialog(
+            title: Text(title),
+            content: SizedBox(
+              width: 760,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 460),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: CustomScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    slivers: <Widget>[
+                      SliverPadding(
+                        padding: const EdgeInsets.all(12),
+                        sliver: SliverToBoxAdapter(
+                          child: SelectionArea(
+                            child: SelectableText(
+                              jsonText,
+                              style: const TextStyle(fontFamily: 'monospace'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    isPretty = !isPretty;
+                  });
+                },
+                child: Text(isPretty ? 'Compact' : 'Pretty'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: jsonText));
+                  if (!context.mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('JSON copied to clipboard')),
+                  );
+                },
+                icon: const Icon(Icons.copy_all, size: 18),
+                label: const Text('Copy'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+String _inspectorSafeJsonEncode(Object? value) {
+  return jsonEncode(_inspectorToJsonSafe(value));
+}
+
+String _inspectorSafePrettyJsonEncode(Object? value) {
+  return const JsonEncoder.withIndent(
+    '  ',
+  ).convert(_inspectorToJsonSafe(value));
+}
+
+const int _previewMaxNodes = 12000;
+const int _previewMaxListItems = 800;
+const int _previewMaxMapFields = 600;
+const int _previewFullMaxNodes = 220000;
+const int _previewFullMaxListItems = 50000;
+const int _previewFullMaxMapFields = 30000;
+
+class _PreviewLimits {
+  const _PreviewLimits({
+    required this.maxNodes,
+    required this.maxListItems,
+    required this.maxMapFields,
+  });
+
+  final int maxNodes;
+  final int maxListItems;
+  final int maxMapFields;
+}
+
+_PreviewLimits _previewLimitsForDepth(int depth) {
+  if (depth < 0) {
+    return const _PreviewLimits(
+      maxNodes: _previewFullMaxNodes,
+      maxListItems: _previewFullMaxListItems,
+      maxMapFields: _previewFullMaxMapFields,
+    );
+  }
+  return const _PreviewLimits(
+    maxNodes: _previewMaxNodes,
+    maxListItems: _previewMaxListItems,
+    maxMapFields: _previewMaxMapFields,
+  );
+}
+
+class _PreviewBudget {
+  int visitedNodes = 0;
+}
+
+Object? _buildValueWithInspectorResolvedNodes(
+  Object? value, {
+  required String nodePath,
+  required Map<String, _InspectorNodeResolveState> resolveStates,
+  required _PreviewLimits limits,
+  _PreviewBudget? budget,
+}) {
+  final _PreviewBudget currentBudget = budget ?? _PreviewBudget();
+  currentBudget.visitedNodes++;
+  if (currentBudget.visitedNodes > limits.maxNodes) {
+    return '<preview truncated: too many nodes>';
+  }
+
+  final _InspectorNodeResolveState? nodeState = resolveStates[nodePath];
+  final bool canUseResolved =
+      nodeState != null &&
+      !nodeState.isResolving &&
+      nodeState.resolvedValue != null;
+  final Object? effectiveValue = canUseResolved
+      ? nodeState.resolvedValue
+      : value;
+
+  if (effectiveValue is Map) {
+    final Map<String, dynamic> output = <String, dynamic>{};
+    int fieldCount = 0;
+    for (final MapEntry<dynamic, dynamic> entry in effectiveValue.entries) {
+      final String field = '${entry.key}';
+      if (_isInternalMetaKey(field)) {
+        continue;
+      }
+      fieldCount++;
+      if (fieldCount > limits.maxMapFields) {
+        output['preview_notice'] =
+            '${effectiveValue.length - limits.maxMapFields} fields omitted';
+        break;
+      }
+      output[field] = _buildValueWithInspectorResolvedNodes(
+        entry.value,
+        nodePath: '$nodePath.$field',
+        resolveStates: resolveStates,
+        limits: limits,
+        budget: currentBudget,
+      );
+    }
+    return output;
+  }
+
+  if (effectiveValue is List) {
+    final int limit = effectiveValue.length > limits.maxListItems
+        ? limits.maxListItems
+        : effectiveValue.length;
+    final List<Object?> output = <Object?>[];
+    for (int i = 0; i < limit; i++) {
+      output.add(
+        _buildValueWithInspectorResolvedNodes(
+          effectiveValue[i],
+          nodePath: '$nodePath[$i]',
+          resolveStates: resolveStates,
+          limits: limits,
+          budget: currentBudget,
+        ),
+      );
+    }
+    if (effectiveValue.length > limit) {
+      output.add('<${effectiveValue.length - limit} items omitted in preview>');
+    }
+    return output;
+  }
+
+  return effectiveValue;
+}
+
+Object? _inspectorToJsonSafe(Object? value) {
+  if (value == null || value is num || value is bool || value is String) {
+    return value;
+  }
+
+  if (value is DateTime) {
+    return value.toIso8601String();
+  }
+
+  if (value is Map) {
+    final Map<String, dynamic> output = <String, dynamic>{};
+    value.forEach((dynamic key, dynamic val) {
+      output['$key'] = _inspectorToJsonSafe(val);
+    });
+    return output;
+  }
+
+  if (value is Iterable) {
+    return value
+        .map((Object? item) => _inspectorToJsonSafe(item))
+        .toList(growable: false);
+  }
+
+  return value.toString();
 }
 
 String valueType(dynamic value) {

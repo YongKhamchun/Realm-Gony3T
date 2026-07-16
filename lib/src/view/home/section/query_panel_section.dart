@@ -358,36 +358,42 @@ class HomeQueryPanel extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: <Widget>[
-                ...panelState.tabs.map((_QueryEditorTab tab) {
-                  final bool isActive = tab.id == panelState.activeTabId;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onLongPress: () => _renameTab(context, ref, tab.id),
-                      child: InputChip(
-                        selected: isActive,
-                        label: Text(tab.title),
-                        onSelected: (_) => _selectTab(ref, tab.id),
-                        onDeleted: panelState.tabs.length > 1
-                            ? () => _closeTab(ref, tab.id)
-                            : null,
-                      ),
-                    ),
+          SizedBox(
+            height: 44,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              itemCount: panelState.tabs.length + 1,
+              itemBuilder: (BuildContext context, int index) {
+                if (index == panelState.tabs.length) {
+                  return IconButton(
+                    tooltip: 'Add query tab',
+                    onPressed:
+                        isQueryRunning ||
+                            panelState.tabs.length >= _maxQueryTabs
+                        ? null
+                        : () => _addTab(ref),
+                    icon: const Icon(Icons.add),
                   );
-                }),
-                IconButton(
-                  tooltip: 'Add query tab',
-                  onPressed:
-                      isQueryRunning || panelState.tabs.length >= _maxQueryTabs
-                      ? null
-                      : () => _addTab(ref),
-                  icon: const Icon(Icons.add),
-                ),
-              ],
+                }
+
+                final _QueryEditorTab tab = panelState.tabs[index];
+                final bool isActive = tab.id == panelState.activeTabId;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onLongPress: () => _renameTab(context, ref, tab.id),
+                    child: InputChip(
+                      selected: isActive,
+                      label: Text(tab.title),
+                      onSelected: (_) => _selectTab(ref, tab.id),
+                      onDeleted: panelState.tabs.length > 1
+                          ? () => _closeTab(ref, tab.id)
+                          : null,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 8),

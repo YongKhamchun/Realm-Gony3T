@@ -9,6 +9,7 @@ class HomeMobileBody extends StatelessWidget {
     required this.documents,
     required this.tableColumns,
     required this.selectedIndex,
+    required this.currentDepth,
     required this.dataSourceLabel,
     required this.schemaName,
     required this.onSelectClass,
@@ -19,10 +20,11 @@ class HomeMobileBody extends StatelessWidget {
   final List<Map<String, dynamic>> documents;
   final List<String> tableColumns;
   final int selectedIndex;
+  final int currentDepth;
   final String dataSourceLabel;
   final String? schemaName;
   final ValueChanged<String> onSelectClass;
-  final Future<Map<String, dynamic>?> Function(int lazyRef)
+  final Future<Map<String, dynamic>?> Function(int lazyRef, {int depth})
   onResolveLazyObjectRef;
 
   @override
@@ -57,6 +59,7 @@ class HomeMobileBody extends StatelessWidget {
                 ),
                 HomeInspectorView(
                   documents: documents,
+                  currentDepth: currentDepth,
                   onResolveLazyObjectRef: onResolveLazyObjectRef,
                 ),
               ],
@@ -135,61 +138,79 @@ class _HomeTreeLayerPanelState extends ConsumerState<HomeTreeLayerPanel> {
     return ColoredBox(
       color: bg,
       child: ClipRect(
-        child: ListView(
+        child: CustomScrollView(
           physics: const ClampingScrollPhysics(),
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            const ListTile(dense: true, title: Text('CLASSES')),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.link, size: 18),
-              title: Text(widget.dataSourceLabel),
+          slivers: <Widget>[
+            const SliverToBoxAdapter(
+              child: ListTile(dense: true, title: Text('CLASSES')),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: TextField(
-                controller: _classSearchController,
-                decoration: const InputDecoration(
-                  hintText: 'Find class',
-                  isDense: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
+            SliverToBoxAdapter(
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.link, size: 18),
+                title: Text(widget.dataSourceLabel),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: TextField(
+                  controller: _classSearchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Find class',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                    prefixIcon: Icon(Icons.search),
                   ),
-                  prefixIcon: Icon(Icons.search),
+                  onChanged: (String value) {
+                    ref
+                        .read(homeProvider.notifier)
+                        .updateClassSearchQuery(value);
+                  },
                 ),
-                onChanged: (String value) {
-                  ref.read(homeProvider.notifier).updateClassSearchQuery(value);
-                },
               ),
             ),
             if (filteredClasses.isEmpty)
-              const ListTile(dense: true, title: Text('No classes found')),
-            ...filteredClasses.map((RealmClassSummary item) {
-              final bool isSelected = item.name == selectedClass;
-              return ListTile(
-                dense: true,
-                selected: isSelected,
-                selectedTileColor: selectedColor,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: isSelected
-                      ? BorderSide(color: selectedBorderColor, width: 1.2)
-                      : BorderSide.none,
-                ),
-                title: Text(
-                  item.name,
-                  style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                    color: isSelected ? selectedTextColor : null,
-                  ),
-                ),
-                trailing: HomeCountBadge(
-                  count: item.count,
-                  isSelected: isSelected,
-                ),
-                onTap: () => widget.onSelectClass(item.name),
-              );
-            }),
+              const SliverToBoxAdapter(
+                child: ListTile(dense: true, title: Text('No classes found')),
+              )
+            else
+              SliverList(
+                delegate: SliverChildBuilderDelegate((
+                  BuildContext context,
+                  int index,
+                ) {
+                  final RealmClassSummary item = filteredClasses[index];
+                  final bool isSelected = item.name == selectedClass;
+                  return ListTile(
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor: selectedColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: isSelected
+                          ? BorderSide(color: selectedBorderColor, width: 1.2)
+                          : BorderSide.none,
+                    ),
+                    title: Text(
+                      item.name,
+                      style: TextStyle(
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w400,
+                        color: isSelected ? selectedTextColor : null,
+                      ),
+                    ),
+                    trailing: HomeCountBadge(
+                      count: item.count,
+                      isSelected: isSelected,
+                    ),
+                    onTap: () => widget.onSelectClass(item.name),
+                  );
+                }, childCount: filteredClasses.length),
+              ),
           ],
         ),
       ),

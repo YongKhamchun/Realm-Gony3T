@@ -242,6 +242,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                         documents: docs,
                         tableColumns: state.currentTableColumns,
                         selectedIndex: state.selectedIndex,
+                        currentDepth: state.loadDepth,
                         dataSourceLabel: state.dataSourceLabel,
                         schemaName: state.openedSchemaName,
                         onSelectClass: _selectClass,
