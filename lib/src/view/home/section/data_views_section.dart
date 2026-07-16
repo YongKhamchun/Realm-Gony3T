@@ -33,17 +33,34 @@ class InspectorTreeExpansionNotifier extends Notifier<Map<String, bool>> {
 
 const int _jsonPreviewLimit = 5;
 
+final _jsonRawProvider = Provider.family<String, _JsonRenderRequest>((
+  Ref ref,
+  _JsonRenderRequest request,
+) {
+  final List<Map<String, dynamic>> documentsForRender = _jsonPreviewDocuments(
+    request.documents,
+  );
+  return _buildCompactJson(documentsForRender);
+});
+
 final _jsonPrettyProvider = FutureProvider.family<String, _JsonRenderRequest>((
   Ref ref,
   _JsonRenderRequest request,
 ) async {
   await Future<void>.delayed(const Duration(milliseconds: 220));
-  final List<Map<String, dynamic>> documentsForRender =
-      request.documents.length <= _jsonPreviewLimit
-      ? request.documents
-      : request.documents.take(_jsonPreviewLimit).toList(growable: false);
+  final List<Map<String, dynamic>> documentsForRender = _jsonPreviewDocuments(
+    request.documents,
+  );
   return _buildPrettyJson(documentsForRender);
 });
+
+List<Map<String, dynamic>> _jsonPreviewDocuments(
+  List<Map<String, dynamic>> documents,
+) {
+  return documents.length <= _jsonPreviewLimit
+      ? documents
+      : documents.take(_jsonPreviewLimit).toList(growable: false);
+}
 
 class _JsonRenderRequest {
   const _JsonRenderRequest({required this.documents});
@@ -599,24 +616,54 @@ class _DeferredTabPlaceholder extends StatelessWidget {
   }
 }
 
-class HomeJsonView extends ConsumerWidget {
+class HomeJsonView extends ConsumerStatefulWidget {
   const HomeJsonView({super.key, required this.documents});
 
   final List<Map<String, dynamic>> documents;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (documents.isEmpty) {
+  ConsumerState<HomeJsonView> createState() => _HomeJsonViewState();
+}
+
+class _HomeJsonViewState extends ConsumerState<HomeJsonView> {
+  bool _isPrettyJsonEnabled = false;
+
+  @override
+  void didUpdateWidget(covariant HomeJsonView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.documents, widget.documents) &&
+        _isPrettyJsonEnabled) {
+      setState(() {
+        _isPrettyJsonEnabled = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.documents.isEmpty) {
       return const Center(child: Text('No data found for this page'));
     }
 
-    final AsyncValue<String> prettyJsonAsync = ref.watch(
-      _jsonPrettyProvider(_JsonRenderRequest(documents: documents)),
+    final _JsonRenderRequest renderRequest = _JsonRenderRequest(
+      documents: widget.documents,
     );
-    final String? renderedJson = prettyJsonAsync.maybeWhen(
+    final String rawJson = ref.watch(_jsonRawProvider(renderRequest));
+
+    final AsyncValue<String> prettyJsonAsync = ref.watch(
+      _jsonPrettyProvider(renderRequest),
+    );
+    final String? renderedPrettyJson = prettyJsonAsync.maybeWhen(
       data: (String data) => data,
       orElse: () => null,
     );
+
+    final bool canFormat = !_isPrettyJsonEnabled;
+    final bool isFormatting =
+        _isPrettyJsonEnabled && renderedPrettyJson == null;
+    final String? renderedJson = _isPrettyJsonEnabled
+        ? renderedPrettyJson
+        : rawJson;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -654,7 +701,7 @@ class HomeJsonView extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (documents.length > _jsonPreviewLimit)
+                if (widget.documents.length > _jsonPreviewLimit)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Text(
@@ -664,69 +711,96 @@ class HomeJsonView extends ConsumerWidget {
                   ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      onTap: renderedJson == null
-                          ? null
-                          : () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: renderedJson),
-                              );
-                              if (!context.mounted) {
-                                return;
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      GestureDetector(
+                        onTap: canFormat
+                            ? () {
+                                setState(() {
+                                  _isPrettyJsonEnabled = true;
+                                });
                               }
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('JSON copied to clipboard'),
-                                  duration: Duration(milliseconds: 1200),
-                                ),
-                              );
-                            },
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(8),
+                            : null,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withValues(alpha: canFormat ? 0.4 : 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(Icons.data_object_rounded, size: 20),
+                          ),
                         ),
-                        child: Icon(Icons.copy_rounded, size: 20),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: renderedJson == null
+                            ? null
+                            : () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: renderedJson),
+                                );
+                                if (!context.mounted) {
+                                  return;
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('JSON copied to clipboard'),
+                                    duration: Duration(milliseconds: 1200),
+                                  ),
+                                );
+                              },
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(Icons.copy_rounded, size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isFormatting)
+                  const Expanded(
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
                       ),
                     ),
-                  ),
-                ),
-                Expanded(
-                  child: prettyJsonAsync.when(
-                    data: (String data) {
-                      return CustomScrollView(
-                        physics: const ClampingScrollPhysics(),
-                        slivers: <Widget>[
-                          SliverToBoxAdapter(
-                            child: SelectableText(
-                              data,
-                              style: const TextStyle(height: 1.4),
+                  )
+                else
+                  Expanded(
+                    child: renderedJson == null
+                        ? const Center(
+                            child: Text(
+                              'Unable to render JSON for this dataset',
                             ),
+                          )
+                        : CustomScrollView(
+                            physics: const ClampingScrollPhysics(),
+                            slivers: <Widget>[
+                              SliverToBoxAdapter(
+                                child: SelectableText(
+                                  renderedJson,
+                                  style: const TextStyle(height: 1.4),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      );
-                    },
-                    loading: () {
-                      return const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        ),
-                      );
-                    },
-                    error: (Object _, StackTrace stackTrace) {
-                      return const Center(
-                        child: Text('Unable to render JSON for this dataset'),
-                      );
-                    },
                   ),
-                ),
               ],
             ),
           ),
@@ -1767,6 +1841,10 @@ Future<String> _buildPrettyJsonAsync(
 
 String _encodePrettyJson(List<Map<String, dynamic>> documents) {
   return const JsonEncoder.withIndent('  ').convert(toJsonSafe(documents));
+}
+
+String _buildCompactJson(List<Map<String, dynamic>> documents) {
+  return jsonEncode(toJsonSafe(documents));
 }
 
 Future<String> _encodePrettyJsonChunked(
