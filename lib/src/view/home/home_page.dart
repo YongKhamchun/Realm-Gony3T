@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:realm_gony3t/realm_gony3t.dart';
 
@@ -165,99 +162,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     ref.read(homeProvider.notifier).activateQueryTab(tabId, normalized);
   }
 
-  Future<String?> _showSaveJsonPathInputDialog({
-    required String className,
-    required String initialPath,
-  }) async {
-    final TextEditingController pathController = TextEditingController(
-      text: initialPath,
-    );
-
-    final String? result = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Save JSON for $className'),
-          content: TextField(
-            controller: pathController,
-            decoration: const InputDecoration(
-              hintText: '/path/to/export.json',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
-              ),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(pathController.text),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-
-    pathController.dispose();
-    return result;
-  }
-
-  Future<void> _exportClassFullDepthJson(String className) async {
-    String? outputPath;
-    try {
-      outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save full-depth JSON for $className',
-        fileName: '$className-full-depth.json',
-        type: FileType.custom,
-        allowedExtensions: <String>['json'],
-      );
-    } on PlatformException catch (e) {
-      if (e.code == 'ENTITLEMENT_REQUIRED_WRITE') {
-        final String homePath = Platform.environment['HOME'] ?? '';
-        final String fallbackBase = homePath.isEmpty
-            ? Directory.systemTemp.path
-            : '$homePath/Downloads';
-        final String fallbackPath = '$fallbackBase/$className-full-depth.json';
-
-        if (!mounted) {
-          return;
-        }
-
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Save dialog needs macOS write entitlement. Enter a path (default is Downloads).',
-              ),
-            ),
-          );
-
-        outputPath = await _showSaveJsonPathInputDialog(
-          className: className,
-          initialPath: fallbackPath,
-        );
-      } else {
-        rethrow;
-      }
-    }
-
-    if (!mounted || outputPath == null || outputPath.trim().isEmpty) {
-      return;
-    }
-
-    await ref
-        .read(homeProvider.notifier)
-        .exportClassFullDepthToJson(
-          className: className,
-          outputPath: outputPath.trim(),
-          prettyJson: false,
-        );
-  }
-
   @override
   Widget build(BuildContext context) {
     ref.listen<HomeState>(homeProvider, (HomeState? previous, HomeState next) {
@@ -341,7 +245,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                         dataSourceLabel: state.dataSourceLabel,
                         schemaName: state.openedSchemaName,
                         onSelectClass: _selectClass,
-                        onExportClassFullDepthJson: _exportClassFullDepthJson,
                         onResolveLazyObjectRef: notifier.resolveLazyObjectRef,
                       );
                     }
@@ -363,8 +266,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                             dataSourceLabel: state.dataSourceLabel,
                             schemaName: state.openedSchemaName,
                             onSelectClass: _selectClass,
-                            onExportClassFullDepthJson:
-                                _exportClassFullDepthJson,
                           ),
                         ),
                         MouseRegion(
