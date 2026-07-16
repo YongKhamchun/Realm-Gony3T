@@ -28,13 +28,12 @@ class HomeMobileBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Column(
         children: <Widget>[
           const TabBar(
             tabs: <Tab>[
               Tab(text: 'Layer'),
-              Tab(text: 'JSON'),
               Tab(text: 'Table'),
               Tab(text: 'Inspector'),
             ],
@@ -51,7 +50,6 @@ class HomeMobileBody extends StatelessWidget {
                   schemaName: schemaName,
                   onSelectClass: onSelectClass,
                 ),
-                HomeJsonView(documents: documents),
                 HomeTableView(
                   documents: documents,
                   columns: tableColumns,

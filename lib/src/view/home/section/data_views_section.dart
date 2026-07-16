@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final NotifierProvider<InspectorTreeExpansionNotifier, Map<String, bool>>
@@ -31,53 +29,6 @@ class InspectorTreeExpansionNotifier extends Notifier<Map<String, bool>> {
   }
 }
 
-const int _jsonPreviewLimit = 1;
-
-final _jsonRawProvider = Provider.family<String, _JsonRenderRequest>((
-  Ref ref,
-  _JsonRenderRequest request,
-) {
-  final List<Map<String, dynamic>> documentsForRender = _jsonPreviewDocuments(
-    request.documents,
-  );
-  return _buildCompactJson(documentsForRender);
-});
-
-final _jsonPrettyProvider = FutureProvider.family<String, _JsonRenderRequest>((
-  Ref ref,
-  _JsonRenderRequest request,
-) async {
-  await Future<void>.delayed(const Duration(milliseconds: 220));
-  final List<Map<String, dynamic>> documentsForRender = _jsonPreviewDocuments(
-    request.documents,
-  );
-  return _buildPrettyJson(documentsForRender);
-});
-
-List<Map<String, dynamic>> _jsonPreviewDocuments(
-  List<Map<String, dynamic>> documents,
-) {
-  return documents.length <= _jsonPreviewLimit
-      ? documents
-      : documents.take(_jsonPreviewLimit).toList(growable: false);
-}
-
-class _JsonRenderRequest {
-  const _JsonRenderRequest({required this.documents});
-
-  final List<Map<String, dynamic>> documents;
-
-  @override
-  bool operator ==(Object other) {
-    return other is _JsonRenderRequest && identical(documents, other.documents);
-  }
-
-  @override
-  int get hashCode {
-    return identityHashCode(documents);
-  }
-}
-
 final NotifierProvider<_DataViewTabIndexNotifier, int>
 _dataViewTabIndexProvider = NotifierProvider<_DataViewTabIndexNotifier, int>(
   _DataViewTabIndexNotifier.new,
@@ -85,7 +36,7 @@ _dataViewTabIndexProvider = NotifierProvider<_DataViewTabIndexNotifier, int>(
 
 class _DataViewTabIndexNotifier extends Notifier<int> {
   @override
-  int build() => 1;
+  int build() => 0;
 
   void select(int index) {
     state = index;
@@ -255,7 +206,7 @@ class _InspectorNodeResolveNotifier
 
 class _LoadedDataTabsNotifier extends Notifier<Set<int>> {
   @override
-  Set<int> build() => <int>{1};
+  Set<int> build() => <int>{0};
 
   void markLoaded(int index) {
     if (state.contains(index)) {
@@ -305,8 +256,8 @@ class HomeDataViewsPanel extends ConsumerWidget {
     );
 
     return DefaultTabController(
-      initialIndex: 1,
-      length: 3,
+      initialIndex: 0,
+      length: 2,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool isCompact = constraints.maxWidth < 980;
@@ -325,7 +276,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                 displayRangeLabel,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
-                              if (activeTabIndex == 1)
+                              if (activeTabIndex == 0)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6),
                                   child: _TableLayerInlinePath(
@@ -343,51 +294,49 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                 runSpacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: <Widget>[
-                                  if (activeTabIndex != 0)
-                                    DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        border: Border.all(
-                                          color: Theme.of(context).dividerColor,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Theme.of(context).dividerColor,
                                       ),
-                                      child: SizedBox(
-                                        height: 30,
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                          ),
-                                          child: DropdownButtonHideUnderline(
-                                            child: DropdownButton<int>(
-                                              value: currentDepth,
-                                              isDense: true,
-                                              onChanged: isLoading
-                                                  ? null
-                                                  : (int? value) {
-                                                      if (value == null) {
-                                                        return;
-                                                      }
-                                                      onSelectDepth(value);
-                                                    },
-                                              items: depthOptions
-                                                  .map(
-                                                    (
-                                                      int depth,
-                                                    ) => DropdownMenuItem<int>(
-                                                      value: depth,
-                                                      child: Text(
-                                                        depth < 0
-                                                            ? 'Depth Full'
-                                                            : 'Depth $depth',
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: SizedBox(
+                                      height: 30,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<int>(
+                                            value: currentDepth,
+                                            isDense: true,
+                                            onChanged: isLoading
+                                                ? null
+                                                : (int? value) {
+                                                    if (value == null) {
+                                                      return;
+                                                    }
+                                                    onSelectDepth(value);
+                                                  },
+                                            items: depthOptions
+                                                .map(
+                                                  (int depth) =>
+                                                      DropdownMenuItem<int>(
+                                                        value: depth,
+                                                        child: Text(
+                                                          depth < 0
+                                                              ? 'Depth Full'
+                                                              : 'Depth $depth',
+                                                        ),
                                                       ),
-                                                    ),
-                                                  )
-                                                  .toList(growable: false),
-                                            ),
+                                                )
+                                                .toList(growable: false),
                                           ),
                                         ),
                                       ),
                                     ),
+                                  ),
                                   OutlinedButton(
                                     onPressed: isLoading || !canPrev
                                         ? null
@@ -415,7 +364,6 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                           .markLoaded(index);
                                     },
                                     tabs: const <Tab>[
-                                      Tab(text: 'JSON'),
                                       Tab(text: 'Table'),
                                       Tab(text: 'Inspector'),
                                     ],
@@ -438,7 +386,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                         context,
                                       ).textTheme.bodySmall,
                                     ),
-                                    if (activeTabIndex == 1)
+                                    if (activeTabIndex == 0)
                                       _TableLayerInlinePath(
                                         scopes: tableScopes,
                                         onTapScope: (int index) {
@@ -452,51 +400,50 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                   ],
                                 ),
                               ),
-                              if (activeTabIndex != 0)
-                                DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Theme.of(context).dividerColor,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: Theme.of(context).dividerColor,
                                   ),
-                                  child: SizedBox(
-                                    height: 30,
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                      ),
-                                      child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<int>(
-                                          value: currentDepth,
-                                          isDense: true,
-                                          onChanged: isLoading
-                                              ? null
-                                              : (int? value) {
-                                                  if (value == null) {
-                                                    return;
-                                                  }
-                                                  onSelectDepth(value);
-                                                },
-                                          items: depthOptions
-                                              .map(
-                                                (int depth) =>
-                                                    DropdownMenuItem<int>(
-                                                      value: depth,
-                                                      child: Text(
-                                                        depth < 0
-                                                            ? 'Depth Full'
-                                                            : 'Depth $depth',
-                                                      ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: SizedBox(
+                                  height: 30,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<int>(
+                                        value: currentDepth,
+                                        isDense: true,
+                                        onChanged: isLoading
+                                            ? null
+                                            : (int? value) {
+                                                if (value == null) {
+                                                  return;
+                                                }
+                                                onSelectDepth(value);
+                                              },
+                                        items: depthOptions
+                                            .map(
+                                              (int depth) =>
+                                                  DropdownMenuItem<int>(
+                                                    value: depth,
+                                                    child: Text(
+                                                      depth < 0
+                                                          ? 'Depth Full'
+                                                          : 'Depth $depth',
                                                     ),
-                                              )
-                                              .toList(growable: false),
-                                        ),
+                                                  ),
+                                            )
+                                            .toList(growable: false),
                                       ),
                                     ),
                                   ),
                                 ),
-                              if (activeTabIndex != 0) const SizedBox(width: 8),
+                              ),
+                              const SizedBox(width: 8),
                               OutlinedButton(
                                 onPressed: isLoading || !canPrev
                                     ? null
@@ -505,7 +452,8 @@ class HomeDataViewsPanel extends ConsumerWidget {
                               ),
                               const SizedBox(width: 8),
                               OutlinedButton(
-                                onPressed: isLoading || !canNext
+                                onPressed:
+                                    isLoading || activeTabIndex == 0 || !canNext
                                     ? null
                                     : onNext,
                                 child: const Text('Next'),
@@ -522,7 +470,6 @@ class HomeDataViewsPanel extends ConsumerWidget {
                                       .markLoaded(index);
                                 },
                                 tabs: const <Tab>[
-                                  Tab(text: 'JSON'),
                                   Tab(text: 'Table'),
                                   Tab(text: 'Inspector'),
                                 ],
@@ -535,16 +482,6 @@ class HomeDataViewsPanel extends ConsumerWidget {
                       index: activeTabIndex,
                       children: <Widget>[
                         loadedTabs.contains(0)
-                            ? HomeJsonView(
-                                key: const PageStorageKey<String>(
-                                  'home-data-json',
-                                ),
-                                documents: documents,
-                              )
-                            : const _DeferredTabPlaceholder(
-                                label: 'Open JSON tab to load records',
-                              ),
-                        loadedTabs.contains(1)
                             ? HomeTableView(
                                 key: const PageStorageKey<String>(
                                   'home-data-table',
@@ -556,7 +493,7 @@ class HomeDataViewsPanel extends ConsumerWidget {
                             : const _DeferredTabPlaceholder(
                                 label: 'Open Table tab to load records',
                               ),
-                        loadedTabs.contains(2)
+                        loadedTabs.contains(1)
                             ? HomeInspectorView(
                                 key: const PageStorageKey<String>(
                                   'home-data-inspector',
@@ -615,200 +552,6 @@ class _DeferredTabPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),
-    );
-  }
-}
-
-class HomeJsonView extends ConsumerStatefulWidget {
-  const HomeJsonView({super.key, required this.documents});
-
-  final List<Map<String, dynamic>> documents;
-
-  @override
-  ConsumerState<HomeJsonView> createState() => _HomeJsonViewState();
-}
-
-class _HomeJsonViewState extends ConsumerState<HomeJsonView> {
-  bool _isPrettyJsonEnabled = false;
-
-  @override
-  void didUpdateWidget(covariant HomeJsonView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.documents, widget.documents) &&
-        _isPrettyJsonEnabled) {
-      setState(() {
-        _isPrettyJsonEnabled = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.documents.isEmpty) {
-      return const Center(child: Text('No data found for this page'));
-    }
-
-    final _JsonRenderRequest renderRequest = _JsonRenderRequest(
-      documents: widget.documents,
-    );
-    final String rawJson = ref.watch(_jsonRawProvider(renderRequest));
-
-    final AsyncValue<String> prettyJsonAsync = ref.watch(
-      _jsonPrettyProvider(renderRequest),
-    );
-    final String? renderedPrettyJson = prettyJsonAsync.maybeWhen(
-      data: (String data) => data,
-      orElse: () => null,
-    );
-
-    final bool canFormat = !_isPrettyJsonEnabled;
-    final bool isFormatting =
-        _isPrettyJsonEnabled && renderedPrettyJson == null;
-    final String? renderedJson = _isPrettyJsonEnabled
-        ? renderedPrettyJson
-        : rawJson;
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: SizedBox(
-        width: double.infinity,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: Theme.of(context).dividerColor),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      child: Text(
-                        'Remark: JSON tab uses a separate query view and may not match Table/Inspector behavior.',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ),
-                ),
-                if (widget.documents.length > _jsonPreviewLimit)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      'JSON shows only first $_jsonPreviewLimit records for performance.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: <Widget>[
-                      GestureDetector(
-                        onTap: canFormat
-                            ? () {
-                                setState(() {
-                                  _isPrettyJsonEnabled = true;
-                                });
-                              }
-                            : null,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withValues(alpha: canFormat ? 0.4 : 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(6),
-                            child: Icon(Icons.data_object_rounded, size: 20),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: renderedJson == null
-                            ? null
-                            : () async {
-                                await Clipboard.setData(
-                                  ClipboardData(text: renderedJson),
-                                );
-                                if (!context.mounted) {
-                                  return;
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('JSON copied to clipboard'),
-                                    duration: Duration(milliseconds: 1200),
-                                  ),
-                                );
-                              },
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withValues(alpha: 0.4),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(6),
-                            child: Icon(Icons.copy_rounded, size: 20),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isFormatting)
-                  const Expanded(
-                    child: Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      ),
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: renderedJson == null
-                        ? const Center(
-                            child: Text(
-                              'Unable to render JSON for this dataset',
-                            ),
-                          )
-                        : CustomScrollView(
-                            physics: const ClampingScrollPhysics(),
-                            slivers: <Widget>[
-                              SliverToBoxAdapter(
-                                child: SelectableText(
-                                  renderedJson,
-                                  style: const TextStyle(height: 1.4),
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1823,60 +1566,6 @@ class HomeInspectorNodeTile extends ConsumerWidget {
       children: isExpanded ? _buildChildren(currentValue) : const <Widget>[],
     );
   }
-}
-
-Future<String> _buildPrettyJson(List<Map<String, dynamic>> documents) {
-  return _buildPrettyJsonAsync(documents);
-}
-
-Future<String> _buildPrettyJsonAsync(
-  List<Map<String, dynamic>> documents,
-) async {
-  try {
-    return await compute<List<Map<String, dynamic>>, String>(
-      _encodePrettyJson,
-      documents,
-    );
-  } catch (_) {
-    return _encodePrettyJsonChunked(documents);
-  }
-}
-
-String _encodePrettyJson(List<Map<String, dynamic>> documents) {
-  return const JsonEncoder.withIndent('  ').convert(toJsonSafe(documents));
-}
-
-String _buildCompactJson(List<Map<String, dynamic>> documents) {
-  return jsonEncode(toJsonSafe(documents));
-}
-
-Future<String> _encodePrettyJsonChunked(
-  List<Map<String, dynamic>> documents,
-) async {
-  final StringBuffer buffer = StringBuffer()..writeln('[');
-  final JsonEncoder encoder = const JsonEncoder.withIndent('  ');
-
-  for (int i = 0; i < documents.length; i++) {
-    final String encoded = encoder.convert(toJsonSafe(documents[i]));
-    final String withArrayIndent = encoded
-        .split('\n')
-        .map((String line) => '  $line')
-        .join('\n');
-    buffer.write(withArrayIndent);
-
-    if (i < documents.length - 1) {
-      buffer.writeln(',');
-    } else {
-      buffer.writeln();
-    }
-
-    if (i.isEven) {
-      await Future<void>.delayed(Duration.zero);
-    }
-  }
-
-  buffer.write(']');
-  return buffer.toString();
 }
 
 class HomeInspectorRow extends StatelessWidget {
